@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -33,31 +34,61 @@ def connect():
         charset="utf8mb4",
         cursorclass=pymysql.cursors.DictCursor,
         connect_timeout=30,
+        read_timeout=60,
+        write_timeout=60,
         autocommit=True,
     )
+
+
+def run_db(work, attempts: int = 5):
+    """Mở kết nối mới cho mỗi thao tác rồi đóng ngay, thử lại nếu host ngắt kết nối.
+
+    Upload video mất nhiều phút nên không giữ kết nối nhàn rỗi (host báo 'MySQL server has gone away').
+    """
+    last: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        db = None
+        try:
+            db = connect()
+            return work(db)
+        except pymysql.err.Error as exc:
+            last = exc
+            print(f"  ! MySQL lỗi ({exc}), thử lại lần {attempt}/{attempts}…")
+            time.sleep(min(5 * attempt, 20))
+        finally:
+            if db is not None:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+    raise RuntimeError(f"MySQL không kết nối được sau {attempts} lần thử: {last}")
 
 
 HAS_TOKEN = "token_gamevui IS NOT NULL AND TRIM(token_gamevui) <> ''"
 
 
-def candidates(db) -> list[dict]:
+def candidates() -> list[dict]:
     """Các hàng có token và num < 9, xáo ngẫu nhiên. Hết hàng thì reset num=0 cho hàng có token rồi lấy lại."""
     sql = (
         f"SELECT client_id, client_secret, token_gamevui, COALESCE(num, 0) AS num "
         f"FROM {TABLE} WHERE {HAS_TOKEN} AND COALESCE(num, 0) < %s ORDER BY RAND()"
     )
-    with db.cursor() as cur:
-        cur.execute(sql, (MAX_NUM,))
-        rows = cur.fetchall()
-        if rows:
-            return rows
-        cur.execute(f"UPDATE {TABLE} SET num = 0 WHERE {HAS_TOKEN}")
-        print(f"  Hết lượt (num >= {MAX_NUM}) -> reset num=0 cho {cur.rowcount} hàng có token")
-        cur.execute(sql, (MAX_NUM,))
-        return cur.fetchall()
+
+    def work(db):
+        with db.cursor() as cur:
+            cur.execute(sql, (MAX_NUM,))
+            rows = cur.fetchall()
+            if rows:
+                return rows
+            cur.execute(f"UPDATE {TABLE} SET num = 0 WHERE {HAS_TOKEN}")
+            print(f"  Hết lượt (num >= {MAX_NUM}) -> reset num=0 cho {cur.rowcount} hàng có token")
+            cur.execute(sql, (MAX_NUM,))
+            return cur.fetchall()
+
+    return run_db(work)
 
 
-def valid_access_token(db, row: dict) -> str:
+def valid_access_token(row: dict) -> str:
     try:
         tokens = json.loads(row["token_gamevui"])
     except (TypeError, ValueError) as exc:
@@ -79,10 +110,38 @@ def valid_access_token(db, row: dict) -> str:
     new.setdefault("refresh_token", tokens["refresh_token"])
     new.setdefault("scope", tokens.get("scope"))
     new["saved_at"] = int(time.time())
-    with db.cursor() as cur:
-        cur.execute(f"UPDATE {TABLE} SET token_gamevui = %s WHERE client_id = %s",
-                    (json.dumps(new), row["client_id"]))
+    def save(db):
+        with db.cursor() as cur:
+            cur.execute(f"UPDATE {TABLE} SET token_gamevui = %s WHERE client_id = %s",
+                        (json.dumps(new), row["client_id"]))
+
+    run_db(save)
     return new["access_token"]
+
+
+def increment_num(client_id: str) -> None:
+    def work(db):
+        with db.cursor() as cur:
+            cur.execute(f"UPDATE {TABLE} SET num = COALESCE(num, 0) + 1 WHERE client_id = %s", (client_id,))
+
+    run_db(work)
+
+
+def cleanup(meta_path: Path, mp4: Path) -> None:
+    """Xóa video, metadata và mọi file tạm sau khi đã upload thành công."""
+    for p in (mp4, meta_path, meta_path.with_name(meta_path.stem + ".youtube.json")):
+        p.unlink(missing_ok=True)
+    out = meta_path.parent
+    for p in out.glob("video-*"):
+        p.unlink(missing_ok=True)
+    for d in (".work", ".cache", "app/game/scenery", "app/game/rig", "app/game/bosses", "app/game/monsters"):
+        shutil.rmtree(d, ignore_errors=True)
+    Path("plan.json").unlink(missing_ok=True)
+    try:
+        out.rmdir()
+    except OSError:
+        pass
+    print("Đã xóa video và các file tạm sau khi upload thành công")
 
 
 def upload(access_token: str, mp4: Path, info: dict, privacy: str, category: str, kids: bool) -> str:
@@ -144,24 +203,23 @@ def main() -> None:
     if args.dry_run:
         return
 
-    db = connect()
-    try:
-        for row in candidates(db):
-            print(f"Thử tài khoản client_id={row['client_id'][:12]}… (num={row['num']})")
-            try:
-                token = valid_access_token(db, row)
-                video_id = upload(token, mp4, info, args.privacy, args.category, args.made_for_kids)
-            except AccountError as exc:
-                print(f"  ! bỏ qua tài khoản này: {exc}")
-                continue
-            with db.cursor() as cur:
-                cur.execute(f"UPDATE {TABLE} SET num = COALESCE(num, 0) + 1 WHERE client_id = %s",
-                            (row["client_id"],))
-            print(f"Đã upload: https://youtu.be/{video_id} (num +1)")
-            return
-        sys.exit("Không có tài khoản nào upload được")
-    finally:
-        db.close()
+    for row in candidates():
+        print(f"Thử tài khoản client_id={row['client_id'][:12]}… (num={row['num']})")
+        try:
+            token = valid_access_token(row)
+            video_id = upload(token, mp4, info, args.privacy, args.category, args.made_for_kids)
+        except AccountError as exc:
+            print(f"  ! bỏ qua tài khoản này: {exc}")
+            continue
+        print(f"Đã upload: https://youtu.be/{video_id}")
+        try:
+            increment_num(row["client_id"])
+            print("  num +1")
+        except RuntimeError as exc:
+            print(f"  ! Video đã lên YouTube nhưng chưa cộng được num: {exc}")
+        cleanup(meta_path, mp4)
+        return
+    sys.exit("Không có tài khoản nào upload được")
 
 
 if __name__ == "__main__":
