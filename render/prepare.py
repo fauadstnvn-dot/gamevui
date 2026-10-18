@@ -159,14 +159,36 @@ def main() -> None:
         if not files and kind not in optional:
             sys.exit(f"Thư mục '{kind}' trên host đang trống")
 
-    # Ưu tiên cảnh trong chon-canh-vat (xóa sau khi dựng xong); nếu không có/không hợp lệ thì dùng canh-vat.
-    scenery = try_pick(client, "priority_scenery", listing.get("priority_scenery", []), rng, manifest, "sceneries", game)
-    from_priority = bool(scenery)
-    if not from_priority:
+    # Kịch bản ưu tiên đứng đầu danh sách (xóa sau khi upload YouTube thành công).
+    scenarios = client.scenarios()
+    scenario = scenarios[0] if scenarios else None
+    if scenario:
+        print(f"  kịch bản ưu tiên: {scenario['id']} ({scenario['name'] or 'không tên'})")
+    sc = scenario or {}
+
+    def pick_planned(kind: str, key: str, names: list[str], count: int) -> list[str]:
+        """Chất liệu do kịch bản chỉ định (nếu có trên host); thiếu/lỗi thì trả rỗng để chọn ngẫu nhiên."""
+        available = {Path(f).stem: f for f in listing[kind]}
+        files = [available[n] for n in names if n in available]
+        for n in names:
+            if n not in available:
+                print(f"  ! kịch bản: không có {kind} '{n}' trên host")
+        return try_pick(client, kind, files, rng, manifest, key, game, count) if files else []
+
+    scenery = pick_planned("scenery", "sceneries", [sc["scenery"]] if sc.get("scenery") else [], 1)
+    from_priority = False
+    if not scenery:
+        # Ưu tiên cảnh trong chon-canh-vat (xóa sau khi dựng xong); nếu không có/không hợp lệ thì dùng canh-vat.
+        scenery = try_pick(client, "priority_scenery", listing.get("priority_scenery", []), rng, manifest, "sceneries", game)
+        from_priority = bool(scenery)
+    if not scenery:
         scenery = try_pick(client, "scenery", listing["scenery"], rng, manifest, "sceneries", game)
-    mount = try_pick(client, "mount", listing["mount"], rng, manifest, "mounts", game)
-    boss = try_pick(client, "boss", listing["boss"], rng, manifest, "bosses", game)
-    monsters = try_pick(client, "monster", listing["monster"], rng, manifest, "monsters", game, rng.randint(3, 5))
+    mount = pick_planned("mount", "mounts", [sc["mount"]] if sc.get("mount") else [], 1) \
+        or try_pick(client, "mount", listing["mount"], rng, manifest, "mounts", game)
+    boss = pick_planned("boss", "bosses", [sc["boss"]] if sc.get("boss") else [], 1) \
+        or try_pick(client, "boss", listing["boss"], rng, manifest, "bosses", game)
+    monsters = pick_planned("monster", "monsters", sc.get("monsters", []), len(sc.get("monsters", []))) \
+        or try_pick(client, "monster", listing["monster"], rng, manifest, "monsters", game, rng.randint(3, 5))
     if not (scenery and mount and boss and monsters):
         sys.exit("Không chọn đủ cảnh / thú cưỡi / boss / quái hợp lệ từ host")
 
@@ -195,6 +217,7 @@ def main() -> None:
         "boss": boss[0],
         "monsters": monsters,
         "sceneryFromPriority": from_priority,
+        "scenarioId": scenario["id"] if scenario else "",
         "musicFile": music_file,
         "musicSeed": rng.randrange(1_000_000),
     }
