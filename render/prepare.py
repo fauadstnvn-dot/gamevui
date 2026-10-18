@@ -15,7 +15,7 @@ APP = ROOT / "app"
 
 
 def manifest_paths(kind: str, entry: dict) -> list[str]:
-    if kind == "scenery":
+    if kind in ("scenery", "priority_scenery"):
         return [layer["src"] for layer in entry["layers"].values()]
     if kind == "mount":
         return [*entry["run"], entry["idle"], entry["up"], entry["down"]]
@@ -72,12 +72,17 @@ def main() -> None:
     manifest = json.loads((game / "manifest.json").read_text(encoding="utf-8"))
     client = HostClient(args.host, args.token, Path(args.cache))
     listing = client.list_all()
+    optional = {"priority_scenery", "music"}
     for kind, files in listing.items():
-        print(f"  {kind}: {len(files)} gói")
-        if not files:
+        print(f"  {kind}: {len(files)} file")
+        if not files and kind not in optional:
             sys.exit(f"Thư mục '{kind}' trên host đang trống")
 
-    scenery = try_pick(client, "scenery", listing["scenery"], rng, manifest, "sceneries", game)
+    # Ưu tiên cảnh trong chon-canh-vat (xóa sau khi dựng xong); nếu không có/không hợp lệ thì dùng canh-vat.
+    scenery = try_pick(client, "priority_scenery", listing.get("priority_scenery", []), rng, manifest, "sceneries", game)
+    from_priority = bool(scenery)
+    if not from_priority:
+        scenery = try_pick(client, "scenery", listing["scenery"], rng, manifest, "sceneries", game)
     mount = try_pick(client, "mount", listing["mount"], rng, manifest, "mounts", game)
     boss = try_pick(client, "boss", listing["boss"], rng, manifest, "bosses", game)
     monsters = try_pick(client, "monster", listing["monster"], rng, manifest, "monsters", game, rng.randint(3, 5))
@@ -90,6 +95,17 @@ def main() -> None:
     manifest["monsters"] = [e for e in manifest["monsters"] if e["id"] in ids(monsters)]
     (game / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
 
+    music_file = ""
+    music_pool = listing.get("music", [])
+    for f in rng.sample(music_pool, len(music_pool)):
+        try:
+            music_file = client.fetch_music(f, Path(args.cache) / "music").as_posix()
+            break
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ! bỏ qua nhạc {f}: {exc}")
+    if not music_file:
+        print("  (không có nhạc ngoài, dùng nhạc nền có sẵn của game)")
+
     plan = {
         "seed": seed,
         "duration": duration,
@@ -97,6 +113,8 @@ def main() -> None:
         "mount": mount[0],
         "boss": boss[0],
         "monsters": monsters,
+        "sceneryFromPriority": from_priority,
+        "musicFile": music_file,
         "musicSeed": rng.randrange(1_000_000),
     }
     Path(args.plan).write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
