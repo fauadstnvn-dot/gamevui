@@ -24,6 +24,9 @@ const height = Number(args.height ?? 1440)
 const fps = Number(args.fps ?? 30)
 const crf = Number(args.crf ?? 20)
 const preset = args.preset ?? 'veryfast'
+// Nhạc ngoài ở mức nền (~35%); nhạc synth gốc của game được tắt khi có nhạc ngoài để không bị chồi giai điệu.
+const MUSIC_GAIN = Number(args['music-gain'] ?? 0.35)
+const GAME_MUSIC_VOL_WITH_EXTERNAL = 0
 const maxMinutes = Number(args.timeout ?? 170)
 
 const plan = JSON.parse(fs.readFileSync(planPath, 'utf8'))
@@ -75,10 +78,23 @@ function startEncode(id, form) {
   frameCount = total
   // JPEG của trình duyệt là full-range BT.601; đổi sang limited-range BT.709 chuẩn video.
   const vf = `scale=${width}:${height}:flags=lanczos:in_range=pc:out_range=tv:in_color_matrix=bt601:out_color_matrix=bt709,format=yuv420p`
+  const musicFile = plan.musicFile && fs.existsSync(plan.musicFile) ? path.resolve(plan.musicFile) : ''
+  const useMusic = hasAudio && musicFile !== ''
+  const videoSec = total / fps
+  // Nhạc ngoài lặp vô hạn rồi bị cắt theo độ dài tiếng game (amix duration=first). Nhạc tự hạ khi có tiếng
+  // chiến đấu (sidechain), nhỏ hơn hiệu ứng, vào/ra mờ dần để không bị cắt đột ngột.
+  const audioGraph = [
+    '[1:a]aformat=sample_rates=48000:channel_layouts=stereo,asplit=2[sfx][key]',
+    `[2:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=${MUSIC_GAIN},afade=t=in:st=0:d=2[mus]`,
+    '[mus][key]sidechaincompress=threshold=0.04:ratio=5:attack=15:release=450:makeup=1[duck]',
+    '[sfx][duck]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,' +
+      `alimiter=limit=0.95,afade=t=out:st=${Math.max(0, videoSec - 3).toFixed(2)}:d=3[aout]`,
+  ].join(';')
   const ff = [
     '-y', '-hide_banner', '-nostdin', '-loglevel', 'error', '-progress', 'pipe:1',
     '-framerate', String(fps), '-start_number', '0', '-i', path.join(frameDir, 'f%06d.jpg'),
     ...(hasAudio ? ['-i', wav] : []),
+    ...(useMusic ? ['-stream_loop', '-1', '-i', musicFile, '-filter_complex', audioGraph, '-map', '0:v', '-map', '[aout]'] : []),
     '-vf', vf, '-r', String(fps),
     '-c:v', 'libx264', '-preset', preset, '-crf', String(crf), '-profile:v', 'high', '-level', '5.2',
     '-pix_fmt', 'yuv420p', '-color_range', 'tv', '-colorspace', 'bt709', '-color_primaries', 'bt709',
@@ -171,7 +187,7 @@ const music = musicValues[plan.musicSeed % musicValues.length]
 const stem = (n) => n.replace(/\.zip$/i, '')
 
 await page.evaluate(
-  ({ plan, size, fps, crf, music }) => {
+  ({ plan, size, fps, crf, music, gameMusicVol }) => {
     const stem = (n) => n.replace(/\.zip$/i, '')
     const setValue = (id, value) => {
       const el = document.getElementById(id)
@@ -189,11 +205,19 @@ await page.evaluate(
     setValue('lang', 'en')
     setValue('duration', String(plan.duration))
     setValue('music-style', music)
+    setValue('music-vol', String(gameMusicVol))
     setValue('size', size)
     setValue('fps', String(fps))
     setValue('crf', String(crf))
   },
-  { plan, size: `${width}x${height}`, fps, crf, music },
+  {
+    plan,
+    size: `${width}x${height}`,
+    fps,
+    crf,
+    music,
+    gameMusicVol: plan.musicFile && fs.existsSync(plan.musicFile) ? GAME_MUSIC_VOL_WITH_EXTERNAL : 0.5,
+  },
 )
 
 for (const box of ['#sceneries', '#monsters']) {
@@ -237,6 +261,7 @@ const meta = {
   boss: plan.boss,
   monsters: plan.monsters,
   file: finalName,
+  music: plan.musicFile ? path.basename(plan.musicFile) : null,
 }
 fs.writeFileSync(path.join(outDir, finalName.replace(/\.mp4$/, '.json')), JSON.stringify(meta, null, 2))
 const size = fs.statSync(path.join(outDir, finalName)).size
