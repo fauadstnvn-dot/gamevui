@@ -67,6 +67,12 @@ jobs:
       - name: Dựng video 2K bằng game gốc (thanh máu, chữ, hiệu ứng, âm thanh)
         run: node runner/render.mjs --plan plan.json --out output --width 2560 --height 1440 --fps 30
 
+      - name: Xóa cảnh vật đã dùng trong chon-canh-vat trên host
+        env:
+          ASSET_HOST_URL: ${{ secrets.ASSET_HOST_URL }}
+          ASSET_HOST_TOKEN: ${{ secrets.ASSET_HOST_TOKEN }}
+        run: python -m render.cleanup --plan plan.json
+
       - name: Tạo SEO bằng DeepSeek và upload YouTube
         id: publish
         if: ${{ inputs.upload != 'false' }}
