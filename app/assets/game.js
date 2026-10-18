@@ -5730,6 +5730,7 @@
     return L < 5 ? "grenade" : L < 11 ? "bomber" : L < 16 ? "missile" : "nuke";
   }
   function skMeta(e) {
+    skFxInit();
     return (
       e.skMeta ||
       (e.skMeta = {
@@ -5769,6 +5770,13 @@
         ? Math.abs(m.x - x) < R + m.w * 0.35
         : Math.hypot(m.x - x, (m.y - y) * 0.8) < R + m.w * 0.4;
       if (hit) {
+        e.strike &&
+          (e.strike.hitFx || (e.strike.hitFx = [])).push({
+            x: m.x,
+            y: m.y - m.h * 0.5,
+            t0: e.strike.t,
+            s: Math.max(90, m.h),
+          });
         $e(e, m, dmg);
         k++;
       }
@@ -6177,353 +6185,177 @@
     e.strike = SK_START[type](e, tg, m);
   }
 
-  function skBoom(c, x, y, u, R, pw, sd) {
-    if (u < 0 || u > 1.7) return;
+  /* ============ Sprite .webp cho vũ khí hỗ trợ (game/fx/*.webp, xem tools/build_fx.py) ============ */
+  var SKFX = { meta: null, imgs: {}, started: false, t: 0 };
+  function skFxInit() {
+    if (SKFX.started) return;
+    SKFX.started = true;
+    fetch(`${Ge}fx/fx.json`)
+      .then((r) => r.json())
+      .then((m) => {
+        for (let k in m) {
+          let d = m[k];
+          if (!d.n) continue;
+          for (let i = 0; i < d.n; i++) {
+            let key = d.n === 1 ? k : `${k}-${i}`,
+              im = new Image();
+            im.crossOrigin = "anonymous";
+            im.src = `${Ge}fx/${key}.webp`;
+            SKFX.imgs[key] = im;
+          }
+        }
+        SKFX.meta = m;
+      })
+      .catch(() => {});
+  }
+  function skSpr(c, name, f, x, y, o) {
+    o = o || {};
+    let d = SKFX.meta && SKFX.meta[name];
+    if (!d) return;
+    let fi = Math.floor(f),
+      i = o.loop ? ((fi % d.n) + d.n) % d.n : skClamp(fi, 0, d.n - 1),
+      im = SKFX.imgs[d.n === 1 ? name : `${name}-${i}`];
+    if (!im || !im.complete || !im.naturalWidth) return;
+    let sc = o.sc == null ? 1 : o.sc,
+      sx = (o.sx != null ? o.sx : sc) * (o.fx ? -1 : 1),
+      sy = (o.sy != null ? o.sy : sc) * (o.fy ? -1 : 1);
     c.save();
-    let k = skEase(u / 0.45);
-    if (u < 0.28)
-      lvGlow(c, x, y, R * (1.7 + pw * 0.3), "rgba(255,248,210,1)", 1 - u / 0.28);
-    let n = 8 + pw * 4;
-    for (let i = 0; i < n; i++) {
-      let a = lvR(i + sd, 1) * Math.PI * 2,
-        d = lvR(i + sd, 2) * R * 0.75 * k,
-        px = x + Math.cos(a) * d,
-        py = y + Math.sin(a) * d * 0.8 - u * R * 0.4,
-        rr = R * (0.42 + lvR(i + sd, 3) * 0.4) * (0.45 + 0.55 * k),
-        hue = Math.max(6, 54 - u * 44 - lvR(i + sd, 4) * 10);
-      lvGlow(
-        c,
-        px,
-        py,
-        rr,
-        `hsl(${hue},100%,${Math.max(32, 58 - u * 22)}%)`,
-        Math.max(0, 1 - u / 1.3) * 0.95,
-      );
-    }
-    if (u < 0.8) {
-      c.globalAlpha = Math.max(0, 1 - u / 0.8) * 0.9;
-      c.strokeStyle = "#fff3c4";
-      c.lineWidth = 3 + 7 * (1 - u / 0.8);
-      c.beginPath();
-      c.ellipse(
-        x,
-        y + R * 0.1,
-        R * (0.6 + 1.9 * skEase(u / 0.8)),
-        R * (0.22 + 0.5 * skEase(u / 0.8)),
-        0,
-        0,
-        Math.PI * 2,
-      );
-      c.stroke();
-    }
-    let sp = 14 + pw * 9;
-    c.lineCap = "round";
-    for (let i = 0; i < sp; i++) {
-      let a = lvR(i + sd, 5) * Math.PI * 2,
-        v = 180 + lvR(i + sd, 6) * (320 + pw * 90),
-        f = (uu) => [
-          x + Math.cos(a) * v * uu,
-          y + Math.sin(a) * v * uu * 0.9 + 430 * uu * uu,
-        ],
-        p0 = f(Math.max(0, u - 0.05)),
-        p1 = f(u);
-      c.globalAlpha = Math.max(0, 1 - u / 1.25);
-      c.strokeStyle = i % 3 ? "#ffd27a" : "#ffffff";
-      c.lineWidth = 3;
-      c.beginPath();
-      c.moveTo(p0[0], p0[1]);
-      c.lineTo(p1[0], p1[1]);
-      c.stroke();
-    }
-    c.globalCompositeOperation = "source-over";
-    if (u > 0.3) {
-      let sm = 5 + pw * 2,
-        uu = u - 0.3;
-      for (let i = 0; i < sm; i++) {
-        let a = lvR(i + sd, 7) * Math.PI * 2,
-          d = lvR(i + sd, 8) * R * 0.8;
-        lvGlow(
-          c,
-          x + Math.cos(a) * d,
-          y + Math.sin(a) * d * 0.5 - uu * (60 + R * 0.45) - R * 0.2,
-          R * (0.45 + uu * 0.35),
-          "rgba(52,46,46,1)",
-          Math.max(0, 0.42 * (1 - uu / 1.3)),
-        );
-      }
-    }
-    if (pw >= 2) {
-      c.fillStyle = "#3b2f28";
-      for (let i = 0; i < 6 + pw * 2; i++) {
-        let a = -Math.PI * (0.1 + lvR(i + sd, 9) * 0.8),
-          v = 220 + lvR(i + sd, 10) * 280;
-        c.globalAlpha = Math.max(0, 1 - u / 1.3);
-        c.save();
-        c.translate(
-          x + Math.cos(a) * v * u,
-          y + Math.sin(a) * v * u + 480 * u * u,
-        );
-        c.rotate(u * 9 + i);
-        c.fillRect(-5, -4, 10, 8);
-        c.restore();
-      }
-    }
+    c.globalAlpha = o.al == null ? 1 : o.al;
+    if (o.add) c.globalCompositeOperation = "lighter";
+    c.translate(x, y);
+    if (o.rot) c.rotate(o.rot);
+    c.scale(sx, sy);
+    c.drawImage(im, -d.ax, -d.ay, d.w, d.h);
     c.restore();
   }
+  function skGlow(c, name, x, y, r, al) {
+    skSpr(c, name, 0, x, y, { sc: (r * 2) / 256, al, add: name !== "glow-black" });
+  }
+  function skFrames(name, u) {
+    let d = SKFX.meta && SKFX.meta[name];
+    return d ? skClamp(u, 0, 0.9999) * d.n : 0;
+  }
 
-  function skTrail(c, x, y, len, w) {
-    c.save();
-    c.globalCompositeOperation = "lighter";
-    let g = c.createLinearGradient(x, y, x, y + len);
-    g.addColorStop(0, "rgba(255,240,170,0.95)");
-    g.addColorStop(0.35, "rgba(255,140,40,0.7)");
-    g.addColorStop(1, "rgba(255,60,20,0)");
-    c.strokeStyle = g;
-    c.lineCap = "round";
-    c.lineWidth = w;
-    c.beginPath();
-    c.moveTo(x, y);
-    c.lineTo(x, y + len);
-    c.stroke();
-    c.restore();
+  function skBoom(c, x, y, u, R, pw, sd) {
+    if (u < 0 || u > 1.7) return;
+    let fade = u < 1.1 ? 1 : Math.max(0, 1 - (u - 1.1) / 0.6),
+      flip = (sd | 0) % 2 === 1;
+    if (u < 0.25) skGlow(c, "glow-white", x, y, R * (1.7 + pw * 0.3), 1 - u / 0.25);
+    if (u < 0.8) {
+      let k = skEase(u / 0.8),
+        sx = (R * (0.6 + 2.3 * k) * 2) / 640;
+      skSpr(c, "shock", skFrames("shock", u / 0.8), x, y + R * 0.15, {
+        sx,
+        sy: sx * 0.7,
+        al: (1 - u / 0.8) * 0.9,
+        add: true,
+      });
+    }
+    skSpr(c, "explosion", skFrames("explosion", u / 1.15), x, y - R * 0.15, {
+      sc: (R * 3.3) / 512,
+      al: fade,
+      fx: flip,
+      rot: (((sd | 0) % 7) - 3) * 0.05,
+    });
+    if (pw >= 3 && u > 0.1)
+      skSpr(c, "explosion", skFrames("explosion", (u - 0.1) / 1.15), x + R * 0.38, y - R * 0.05, {
+        sc: (R * 2.4) / 512,
+        al: fade,
+        fx: !flip,
+      });
+    if (u < 0.9)
+      skSpr(c, "sparks", skFrames("sparks", u / 0.9), x, y - R * 0.2, {
+        sc: (R * (2.4 + pw * 0.5)) / 384,
+        add: true,
+      });
+    if (u > 0.3) {
+      let uu = u - 0.3;
+      for (let i = 0; i < 3 + pw; i++)
+        skSpr(
+          c,
+          "smoke",
+          i,
+          x + (lvR(i + sd, 7) - 0.5) * R * 1.3,
+          y - uu * (60 + R * 0.45) - R * 0.2 - lvR(i + sd, 8) * R * 0.4,
+          { sc: (R * (1.0 + uu * 0.8)) / 192, al: Math.max(0, 0.6 * (1 - uu / 1.3)), loop: true },
+        );
+    }
+    if (pw >= 2)
+      for (let i = 0; i < 8 + pw * 2; i++) {
+        let a = -Math.PI * (0.1 + lvR(i + sd, 9) * 0.8),
+          v = 220 + lvR(i + sd, 10) * 280;
+        skSpr(c, "ember", i + u * 8, x + Math.cos(a) * v * u, y + Math.sin(a) * v * u + 480 * u * u, {
+          sc: (0.16 + lvR(i + sd, 11) * 0.2) * (1 - u * 0.3),
+          al: Math.max(0, 1 - u / 1.3),
+          add: true,
+          loop: true,
+        });
+      }
   }
 
   function skReticle(c, x, y, r, t, col) {
-    c.save();
-    c.translate(x, y);
-    c.strokeStyle = col;
-    c.shadowColor = col;
-    c.shadowBlur = 12;
-    c.lineWidth = 4;
-    c.beginPath();
-    c.arc(0, 0, r, 0, Math.PI * 2);
-    c.stroke();
-    c.rotate(t * 2.4);
-    c.lineWidth = 5;
-    for (let i = 0; i < 4; i++) {
-      c.rotate(Math.PI / 2);
-      c.beginPath();
-      c.moveTo(r * 0.62, 0);
-      c.lineTo(r * 1.35, 0);
-      c.stroke();
-    }
-    c.restore();
+    let nm = col.indexOf("255,230") >= 0 ? "reticle-y" : "reticle-r";
+    skSpr(c, nm, ((t * 2.4) / (Math.PI / 2)) * 8, x, y, { sc: r / 77, loop: true, al: 0.95 });
   }
 
   function skMissile(c, x, y, ang, sz, flame) {
-    c.save();
-    c.translate(x, y);
-    c.rotate(ang);
-    if (flame) {
-      c.globalCompositeOperation = "lighter";
-      lvGlow(c, -sz * 0.62, 0, sz * 0.7, "rgba(255,170,60,1)", 0.9);
-      c.globalCompositeOperation = "source-over";
-    }
-    c.fillStyle = "#8d1f1f";
-    for (let sd = -1; sd <= 1; sd += 2) {
-      c.beginPath();
-      c.moveTo(-sz * 0.4, 0);
-      c.lineTo(-sz * 0.62, sd * sz * 0.34);
-      c.lineTo(-sz * 0.22, sd * sz * 0.12);
-      c.closePath();
-      c.fill();
-    }
-    let g = c.createLinearGradient(0, -sz * 0.12, 0, sz * 0.12);
-    g.addColorStop(0, "#ffffff");
-    g.addColorStop(0.6, "#c9ced6");
-    g.addColorStop(1, "#7b828c");
-    c.fillStyle = g;
-    c.beginPath();
-    c.roundRect(-sz * 0.5, -sz * 0.1, sz * 0.82, sz * 0.2, sz * 0.06);
-    c.fill();
-    c.fillStyle = "#e0402a";
-    c.beginPath();
-    c.moveTo(sz * 0.32, -sz * 0.1);
-    c.quadraticCurveTo(sz * 0.62, -sz * 0.04, sz * 0.66, 0);
-    c.quadraticCurveTo(sz * 0.62, sz * 0.04, sz * 0.32, sz * 0.1);
-    c.closePath();
-    c.fill();
-    c.fillRect(-sz * 0.12, -sz * 0.1, sz * 0.08, sz * 0.2);
-    c.restore();
+    skSpr(c, "missile", SKFX.t * 22, x, y, { rot: ang, sc: (sz * 1.3) / 130, loop: true });
+    if (flame)
+      skGlow(c, "glow-orange", x - Math.cos(ang) * sz * 0.95, y - Math.sin(ang) * sz * 0.95, sz * 0.6, 0.55);
   }
 
   function skPlane(c, x, y, t) {
-    c.save();
-    c.translate(x, y);
-    let fl = Math.sin(t * 40) * 1.2;
-    c.fillStyle = "rgba(0,0,0,0.18)";
-    c.beginPath();
-    c.ellipse(-10, 494, 150, 16, 0, 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = "#4e5a3e";
-    c.beginPath();
-    c.moveTo(-70, -8);
-    c.lineTo(-135, -62);
-    c.lineTo(-108, -62);
-    c.lineTo(-48, -14);
-    c.closePath();
-    c.fill();
-    let g = c.createLinearGradient(0, -30, 0, 30);
-    g.addColorStop(0, "#9aa882");
-    g.addColorStop(0.5, "#6f7c58");
-    g.addColorStop(1, "#4a5538");
-    c.fillStyle = g;
-    c.beginPath();
-    c.moveTo(-135, 0);
-    c.quadraticCurveTo(-120, -26, -50, -26);
-    c.lineTo(60, -28);
-    c.quadraticCurveTo(122, -22, 150, 4);
-    c.quadraticCurveTo(110, 30, 40, 30);
-    c.lineTo(-60, 26);
-    c.quadraticCurveTo(-120, 22, -135, 0);
-    c.fill();
-    c.fillStyle = "rgba(150,215,255,0.9)";
-    c.beginPath();
-    c.ellipse(28, -26, 30, 12, 0, Math.PI, 0);
-    c.fill();
-    c.fillStyle = "#3b4430";
-    c.beginPath();
-    c.moveTo(-8, 4);
-    c.lineTo(-62, 52 + fl);
-    c.lineTo(-12, 56 + fl);
-    c.lineTo(46, 8);
-    c.closePath();
-    c.fill();
-    c.fillStyle = "#d9d3a4";
-    c.beginPath();
-    c.arc(-24, 8, 9, 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = "#b8302a";
-    c.beginPath();
-    c.arc(-24, 8, 4, 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = "#2a2a2a";
-    c.fillRect(-26, 28, 52, 12);
-    c.globalAlpha = 0.5;
-    c.fillStyle = "#e6e6e6";
-    c.beginPath();
-    c.ellipse(152, 4, 7, 46, 0, 0, Math.PI * 2);
-    c.fill();
-    c.globalAlpha = 1;
-    c.fillStyle = "#c7a83a";
-    c.beginPath();
-    c.arc(150, 4, 8, 0, Math.PI * 2);
-    c.fill();
-    c.restore();
-    c.save();
-    c.globalCompositeOperation = "lighter";
-    for (let i = 1; i <= 10; i++)
-      lvGlow(
-        c,
-        x - 140 - i * 24,
-        y + Math.sin(i + t * 9) * 4,
-        18 + i * 3,
-        "rgba(255,255,255,0.8)",
-        0.28 * (1 - i / 11),
-      );
-    c.restore();
+    skSpr(c, "glow-black", 0, x - 10, y + 494, { sx: 300 / 256, sy: 34 / 256, al: 0.35 });
+    for (let i = 10; i >= 1; i--)
+      skSpr(c, "smoke", i + Math.floor(t * 6), x - 160 - i * 28, y + 6 + Math.sin(i + t * 9) * 4, {
+        sc: (40 + i * 7) / 192,
+        al: 0.55 * (1 - i / 11),
+        loop: true,
+      });
+    skSpr(c, "plane", t * 18, x, y, { loop: true, sc: 0.95 });
   }
 
   function skMushroom(c, x, gy, u, fade) {
-    c.save();
-    let rise = skEase(u / 3.2),
-      stemH = 430 * rise,
-      capY = gy - stemH,
-      capR = 60 + 150 * skEase(u / 2.4),
-      stemW = 34 + 26 * rise,
-      dust = skEase(u / 1.4);
-    c.globalAlpha = fade;
-    c.fillStyle = "rgba(90,70,55,0.55)";
-    c.beginPath();
-    c.ellipse(x, gy + 6, 120 + 520 * dust, 18 + 42 * dust, 0, 0, Math.PI * 2);
-    c.fill();
-    let sg = c.createLinearGradient(x - stemW, 0, x + stemW, 0);
-    sg.addColorStop(0, "rgba(70,45,30,0.95)");
-    sg.addColorStop(0.5, "rgba(255,150,60,0.95)");
-    sg.addColorStop(1, "rgba(70,45,30,0.95)");
-    c.fillStyle = sg;
-    c.beginPath();
-    c.moveTo(x - stemW * 1.9, gy + 4);
-    c.quadraticCurveTo(x - stemW * 0.5, gy - stemH * 0.5, x - stemW * 0.8, capY + 10);
-    c.lineTo(x + stemW * 0.8, capY + 10);
-    c.quadraticCurveTo(x + stemW * 0.5, gy - stemH * 0.5, x + stemW * 1.9, gy + 4);
-    c.closePath();
-    c.fill();
-    for (let i = 0; i < 16; i++) {
-      let a = lvR(i, 31) * Math.PI * 2,
-        d = lvR(i, 32) * capR * 0.8,
-        wob = Math.sin(u * 2 + i) * 6,
-        px = x + Math.cos(a) * d * 1.35,
-        py = capY + Math.sin(a) * d * 0.62 + wob,
-        r = capR * (0.34 + lvR(i, 33) * 0.3),
-        g = c.createRadialGradient(px, py - r * 0.2, 2, px, py, r);
-      g.addColorStop(0, "rgba(255,226,140,0.98)");
-      g.addColorStop(0.45, "rgba(255,120,38,0.95)");
-      g.addColorStop(1, "rgba(80,40,28,0.9)");
-      c.fillStyle = g;
-      c.beginPath();
-      c.arc(px, py, r, 0, Math.PI * 2);
-      c.fill();
-    }
-    c.globalCompositeOperation = "lighter";
-    lvGlow(c, x, capY + 6, capR * 1.3, "rgba(255,190,80,1)", 0.5 * fade);
-    c.restore();
+    let rise = skEase(u / 3.2);
+    skGlow(c, "glow-orange", x, gy - 40 - 260 * rise, 320 + 120 * rise, 0.5 * fade);
+    skSpr(c, "mushroom", skFrames("mushroom", u / 3.4), x, gy + 6, { sc: 1.5, al: fade });
   }
 
   function skGrenadeLauncher(c, s, t) {
     let a = Math.atan2(s.ay - s.oy - 120, s.ax - s.ox),
-      rec = 14 - Math.min(14, t * 70);
-    c.save();
-    c.translate(s.ox - Math.cos(a) * rec, s.oy - Math.sin(a) * rec);
-    c.rotate(a);
-    c.fillStyle = "#2c3036";
-    c.fillRect(-26, -11, 92, 22);
-    c.fillStyle = "#5c6470";
-    c.fillRect(-26, -11, 92, 7);
-    c.fillStyle = "#1c1f23";
-    c.beginPath();
-    c.arc(10, 10, 18, 0, Math.PI * 2);
-    c.fill();
-    c.strokeStyle = "#8a93a0";
-    c.lineWidth = 3;
-    c.stroke();
-    c.fillStyle = "#14161a";
-    c.fillRect(60, -14, 14, 28);
-    c.restore();
-    if (t < 0.25) {
-      c.save();
-      c.globalCompositeOperation = "lighter";
-      lvGlow(
+      flip = Math.cos(a) < 0,
+      fr = t < 0.5 ? 1 + Math.floor((t / 0.5) * 4.99) : 0,
+      mx = s.ox + Math.cos(a) * 100,
+      my = s.oy + Math.sin(a) * 100;
+    skSpr(c, "launcher", fr, s.ox, s.oy, { rot: a, fy: flip, sc: 0.62 });
+    if (t < 0.3) skSpr(c, "flash", skFrames("flash", t / 0.3), mx, my, { rot: a, sc: 0.55 });
+    for (let i = 0; i < 6; i++)
+      skSpr(
         c,
-        s.ox + Math.cos(a) * 80,
-        s.oy + Math.sin(a) * 80,
-        90 * (1 - t / 0.25) + 20,
-        "rgba(255,220,130,1)",
-        1 - t / 0.25,
+        "smoke",
+        i,
+        s.ox + Math.cos(a) * (104 + i * 14 * t * 3),
+        s.oy + Math.sin(a) * (104 + i * 14 * t * 3) - t * 30 * i * 0.3,
+        { sc: (40 + i * 20 * t) / 192, al: Math.max(0, 0.55 - t * 0.7), loop: true },
       );
-      c.restore();
-    }
-    c.save();
-    for (let i = 0; i < 6; i++) {
-      c.globalAlpha = Math.max(0, 0.45 - t * 0.6);
-      c.fillStyle = "#d8d8d8";
-      c.beginPath();
-      c.arc(
-        s.ox + Math.cos(a) * (84 + i * 14 * t * 3),
-        s.oy + Math.sin(a) * (84 + i * 14 * t * 3) - t * 30 * i * 0.3,
-        8 + i * 4 * t,
-        0,
-        Math.PI * 2,
-      );
-      c.fill();
-    }
-    c.restore();
   }
 
   function skDraw(c, e) {
     let s = e.strike;
     if (!s) return;
+    skFxInit();
     let t = s.t;
+    SKFX.t = t;
+    if (s.hitFx)
+      for (let h of s.hitFx) {
+        let uu = (t - h.t0) / 0.75;
+        if (uu < 0 || uu > 1) continue;
+        skSpr(c, "explosion", skFrames("explosion", uu), h.x, h.y, {
+          sc: (h.s * 1.6) / 512,
+          al: 1 - uu * uu,
+        });
+        skSpr(c, "sparks", skFrames("sparks", uu), h.x, h.y, { sc: (h.s * 1.8) / 384, add: true });
+      }
     if (s.type === "grenade") {
       let u = skClamp(t / s.T, 0, 1),
         dx = s.ax - s.ox,
@@ -6537,36 +6369,15 @@
           p = pos(u);
         for (let j = 12; j >= 1; j--) {
           let q2 = pos(Math.max(0, u - j * 0.022));
-          c.save();
-          c.globalAlpha = 0.5 * (1 - j / 13);
-          c.fillStyle = j < 4 ? "#ffcb74" : "#bdbdbd";
-          c.beginPath();
-          c.arc(q2.x, q2.y, 4 + j * 0.9, 0, Math.PI * 2);
-          c.fill();
-          c.restore();
+          skSpr(c, j < 4 ? "ember" : "smoke", j, q2.x, q2.y, {
+            sc: (6 + j * 1.8) / (j < 4 ? 80 : 96),
+            al: 0.55 * (1 - j / 13),
+            add: j < 4,
+            loop: true,
+          });
         }
-        c.save();
-        c.translate(p.x, p.y);
-        c.rotate(t * 16);
-        c.fillStyle = "#3f5a34";
-        c.beginPath();
-        c.ellipse(0, 0, 17, 12, 0, 0, Math.PI * 2);
-        c.fill();
-        c.fillStyle = "#2a3d23";
-        c.fillRect(-4, -15, 8, 7);
-        c.strokeStyle = "#1f2d1a";
-        c.lineWidth = 2;
-        for (let i = -1; i <= 1; i++) {
-          c.beginPath();
-          c.moveTo(-14, i * 6);
-          c.lineTo(14, i * 6);
-          c.stroke();
-        }
-        c.restore();
-        c.save();
-        c.globalCompositeOperation = "lighter";
-        lvGlow(c, p.x, p.y, 30, "rgba(255,200,90,1)", 0.6);
-        c.restore();
+        skGlow(c, "glow-orange", p.x, p.y, 30, 0.6);
+        skSpr(c, "grenade", t * 14, p.x, p.y, { loop: true, sc: 0.62 });
         skReticle(c, s.ax, s.ay, 52 - u * 10, t, "rgba(255,70,50,0.95)");
       }
       s.hit && skBoom(c, s.ix, s.iy, t - s.T, 140, 2, 3);
@@ -6578,29 +6389,13 @@
         if (uu > -0.05 && uu < 1) {
           let y1 = P - 20,
             by = 150 + (y1 - 150) * Math.pow(Math.max(0, uu), 1.7);
-          c.save();
-          c.translate(b.x, by);
-          c.rotate(Math.PI / 2 - 0.1 + Math.sin(t * 6 + b.x) * 0.05);
-          c.fillStyle = "#2f343b";
-          c.beginPath();
-          c.ellipse(0, 0, 30, 11, 0, 0, Math.PI * 2);
-          c.fill();
-          c.fillStyle = "#5c6470";
-          c.fillRect(-26, -9, 10, 4);
-          c.fillStyle = "#222";
-          c.fillRect(-40, -12, 12, 24);
-          c.fillStyle = "#c9a227";
-          c.fillRect(8, -11, 5, 22);
-          c.restore();
-          c.save();
-          c.globalAlpha = 0.4;
-          c.strokeStyle = "#fff";
-          c.lineWidth = 2;
-          c.beginPath();
-          c.moveTo(b.x, by - 24);
-          c.lineTo(b.x, by - 90);
-          c.stroke();
-          c.restore();
+          for (let k = 3; k >= 1; k--)
+            skSpr(c, "smoke", k, b.x, by - 34 - k * 24, { sc: (14 + k * 8) / 192, al: 0.4 / k, loop: true });
+          skSpr(c, "bomb", t * 12 + b.x, b.x, by, {
+            loop: true,
+            rot: Math.PI / 2 - 0.1 + Math.sin(t * 6 + b.x) * 0.05,
+            sc: 0.85,
+          });
         }
         b.done &&
           skBoom(
@@ -6639,13 +6434,12 @@
             ang = Math.atan2(p2.y - p.y, p2.x - p.x);
           for (let j = 18; j >= 1; j--) {
             let tp = f(Math.max(0, u - j * 0.016));
-            c.save();
-            c.globalAlpha = 0.55 * (1 - j / 19);
-            c.fillStyle = j < 5 ? "#ffd58a" : "#d7d7d7";
-            c.beginPath();
-            c.arc(tp.x, tp.y, 5 + j * 1.2, 0, Math.PI * 2);
-            c.fill();
-            c.restore();
+            skSpr(c, j < 5 ? "ember" : "smoke", j + i, tp.x, tp.y, {
+              sc: (10 + j * 2.4) / (j < 5 ? 80 : 96),
+              al: 0.6 * (1 - j / 19),
+              add: j < 5,
+              loop: true,
+            });
           }
           skMissile(c, p.x, p.y, ang, 90 + (u > 0.55 ? 24 : 0), true);
         }
@@ -6657,100 +6451,53 @@
         let wu = skClamp((t - 2.4) / (T0 - 2.4), 0, 1),
           wx = s.cx - 150 * (1 - wu),
           wy = -260 + (P + 270) * Math.pow(wu, 1.15);
-        for (let j = 1; j <= 22; j++) {
+        for (let j = 22; j >= 1; j--) {
           let uu2 = Math.max(0, wu - j * 0.02),
             tx = s.cx - 150 * (1 - uu2),
             ty = -260 + (P + 270) * Math.pow(uu2, 1.15);
-          c.save();
-          c.globalAlpha = 0.5 * (1 - j / 23);
-          c.fillStyle = j < 7 ? "#ffb04a" : "#cfcfcf";
-          c.beginPath();
-          c.arc(tx, ty - 170 - j * 6, 12 + j * 2.2, 0, Math.PI * 2);
-          c.fill();
-          c.restore();
+          skSpr(c, j < 7 ? "ember" : "smoke", j, tx, ty - 190 - j * 6, {
+            sc: (24 + j * 4.4) / (j < 7 ? 80 : 96),
+            al: 0.55 * (1 - j / 23),
+            add: j < 7,
+            loop: true,
+          });
         }
-        c.save();
-        c.translate(wx, wy);
-        c.rotate(-0.25 * (1 - wu));
-        c.globalCompositeOperation = "lighter";
-        lvGlow(c, 0, -90, 120, "rgba(255,120,40,1)", 0.7);
-        c.globalCompositeOperation = "source-over";
-        let g = c.createLinearGradient(-26, 0, 26, 0);
-        g.addColorStop(0, "#6b727c");
-        g.addColorStop(0.45, "#f1f3f6");
-        g.addColorStop(1, "#4f565f");
-        c.fillStyle = g;
-        c.beginPath();
-        c.roundRect(-24, -150, 48, 150, 10);
-        c.fill();
-        c.fillStyle = "#e8c21d";
-        c.fillRect(-24, -108, 48, 16);
-        c.fillStyle = "#16181b";
-        c.fillRect(-24, -90, 48, 6);
-        c.fillStyle = "#d32f2f";
-        c.beginPath();
-        c.moveTo(-24, 0);
-        c.quadraticCurveTo(0, 54, 24, 0);
-        c.closePath();
-        c.fill();
-        c.fillStyle = "#3b3f46";
-        for (let sd = -1; sd <= 1; sd += 2) {
-          c.beginPath();
-          c.moveTo(sd * 24, -150);
-          c.lineTo(sd * 52, -186);
-          c.lineTo(sd * 24, -112);
-          c.closePath();
-          c.fill();
-        }
-        skTrail(c, 0, -190, 200, 38);
-        c.restore();
+        skGlow(c, "glow-orange", wx, wy - 190, 130, 0.7);
+        skSpr(c, "nuke", t * 20, wx, wy - 100, {
+          rot: Math.PI / 2 - 0.25 * (1 - wu),
+          sc: 1,
+          loop: true,
+        });
       }
       if (t >= T0) {
         let u = t - T0,
           fade = u < 3.8 ? 1 : Math.max(0, 1 - (u - 3.8) / 2.4);
-        c.save();
-        c.globalCompositeOperation = "lighter";
         u < 1.4 &&
-          lvGlow(
-            c,
-            s.cx,
-            P - 40,
-            520 * skEase(u / 1.1) + 80,
-            "rgba(255,244,200,1)",
-            Math.max(0, 1 - u / 1.4),
-          );
-        c.restore();
-        c.save();
-        c.globalAlpha = Math.max(0, 1 - u / 2.2);
+          skGlow(c, "glow-white", s.cx, P - 40, 520 * skEase(u / 1.1) + 80, Math.max(0, 1 - u / 1.4));
         for (let i = 0; i < 3; i++) {
           let rr = (u - i * 0.12) * 1300;
           if (rr > 0) {
-            c.strokeStyle = i ? "rgba(255,200,120,0.9)" : "rgba(255,255,255,0.95)";
-            c.lineWidth = 14 - i * 3;
-            c.beginPath();
-            c.ellipse(s.cx, P + 6, rr, rr * 0.16, 0, 0, Math.PI * 2);
-            c.stroke();
+            let sx = (rr * 2) / 640;
+            skSpr(c, "shock", skFrames("shock", u / 2.2), s.cx, P + 6, {
+              sx,
+              sy: sx * 0.64,
+              al: Math.max(0, 1 - u / 2.2),
+              add: true,
+            });
           }
         }
-        c.restore();
         skMushroom(c, s.cx, P, u, fade);
         for (let i = 0; i < 40; i++) {
           let a = lvR(i, 41) * Math.PI * 2,
             v = 160 + lvR(i, 42) * 600;
-          c.save();
-          c.globalCompositeOperation = "lighter";
-          c.globalAlpha = Math.max(0, 1 - u / 2.6);
-          c.fillStyle = i % 2 ? "#ffd27a" : "#ffffff";
-          c.beginPath();
-          c.arc(
+          skSpr(
+            c,
+            "ember",
+            i + u * 10,
             s.cx + Math.cos(a) * v * u * 0.9,
             P - 40 + Math.sin(a) * v * u * 0.7 + 260 * u * u,
-            3 + lvR(i, 43) * 3,
-            0,
-            Math.PI * 2,
+            { sc: (0.14 + lvR(i, 43) * 0.2), al: Math.max(0, 1 - u / 2.6), add: true, loop: true },
           );
-          c.fill();
-          c.restore();
         }
       }
     }
