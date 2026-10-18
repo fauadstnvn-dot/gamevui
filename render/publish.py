@@ -136,7 +136,6 @@ def cleanup(meta_path: Path, mp4: Path) -> None:
         p.unlink(missing_ok=True)
     for d in (".work", ".cache", "app/game/scenery", "app/game/rig", "app/game/bosses", "app/game/monsters"):
         shutil.rmtree(d, ignore_errors=True)
-    Path("plan.json").unlink(missing_ok=True)
     try:
         out.rmdir()
     except OSError:
