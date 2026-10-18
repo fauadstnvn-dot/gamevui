@@ -16,7 +16,11 @@ CATEGORIES = {
     "mount": "thu-cuoi",
     "boss": "boss",
     "monster": "quai-vat",
+    "priority_scenery": "chon-canh-vat",
+    "music": "music",
 }
+MUSIC_EXTS = {".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".opus"}
+MAX_MUSIC_BYTES = 120 * 1024 * 1024
 ALLOWED_PREFIXES = ("scenery/", "rig/mounts/", "bosses/", "monsters/", "sun/")
 ALLOWED_EXTS = {".webp", ".png"}
 MAX_ZIP_BYTES = 120 * 1024 * 1024
@@ -59,11 +63,15 @@ class HostClient:
             for kind, folder in CATEGORIES.items():
                 d = Path(self.host) / folder
                 result[kind] = sorted(p.name for p in d.glob("*.zip")) if d.is_dir() else []
+            md = Path(self.host) / CATEGORIES["music"]
+            result["music"] = sorted(p.name for p in md.iterdir() if p.suffix.lower() in MUSIC_EXTS) if md.is_dir() else []
             return result
         data = json.loads(self._request(f"{self.host}/api.php?action=list"))
         for kind, folder in CATEGORIES.items():
             items = data.get(folder, [])
             result[kind] = sorted(i["file"] if isinstance(i, dict) else i for i in items)
+        result["music"] = [f for f in result.get("music", []) if Path(f).suffix.lower() in MUSIC_EXTS]
+        result["priority_scenery"] = [f for f in result.get("priority_scenery", []) if f.lower().endswith(".zip")]
         return result
 
     def fetch_into(self, kind: str, file: str, game_dir: Path) -> list[str]:
@@ -80,6 +88,37 @@ class HostClient:
             return safe_extract(zip_path, game_dir)
         finally:
             zip_path.unlink(missing_ok=True)
+
+
+    def fetch_music(self, file: str, dest_dir: Path) -> Path:
+        """Tải một bài nhạc (mp3/wav/ogg/...) về dest_dir và trả về đường dẫn file."""
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / Path(file).name
+        if self.is_local:
+            shutil.copy(Path(self.host) / CATEGORIES["music"] / file, dest)
+        else:
+            q = urllib.parse.urlencode({"action": "get", "cat": CATEGORIES["music"], "file": file})
+            dest.write_bytes(self._request(f"{self.host}/api.php?{q}"))
+        if dest.stat().st_size > MAX_MUSIC_BYTES or dest.stat().st_size < 1024:
+            dest.unlink(missing_ok=True)
+            raise RuntimeError(f"{file}: kích thước nhạc không hợp lệ")
+        return dest
+
+    def delete(self, kind: str, file: str) -> None:
+        """Xóa file trên host (dùng cho cảnh vật ở chon-canh-vat sau khi đã sử dụng)."""
+        folder = CATEGORIES[kind]
+        if self.is_local:
+            (Path(self.host) / folder / file).unlink(missing_ok=True)
+            return
+        headers = {"User-Agent": USER_AGENT}
+        if self.token:
+            headers["X-Token"] = self.token
+        q = urllib.parse.urlencode({"action": "delete", "cat": folder, "file": file})
+        req = urllib.request.Request(f"{self.host}/api.php?{q}", data=b"", headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=60) as res:
+            body = json.loads(res.read() or b"{}")
+        if isinstance(body, dict) and body.get("ok") is False:
+            raise RuntimeError(body.get("error", "host từ chối xóa"))
 
 
 def safe_extract(zip_path: Path, game_dir: Path) -> list[str]:
