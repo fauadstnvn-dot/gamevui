@@ -67,13 +67,8 @@ jobs:
       - name: Dựng video 2K bằng game gốc (thanh máu, chữ, hiệu ứng, âm thanh)
         run: node runner/render.mjs --plan plan.json --out output --width 2560 --height 1440 --fps 30
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: video-mp4
-          path: output/*
-          retention-days: 7
-
       - name: Tạo SEO bằng DeepSeek và upload YouTube
+        id: publish
         if: ${{ inputs.upload != 'false' }}
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -83,3 +78,16 @@ jobs:
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASS: ${{ secrets.DB_PASS }}
         run: python -m render.publish --dir output --privacy ${{ inputs.privacy || 'public' }}
+
+      - name: Giữ lại video nếu chưa upload thành công (để tải về thủ công)
+        if: ${{ always() && steps.publish.outcome != 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-mp4
+          path: output/*
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Dọn file tạm
+        if: ${{ always() }}
+        run: rm -rf .work .cache plan.json app/game/scenery app/game/rig app/game/bosses app/game/monsters
