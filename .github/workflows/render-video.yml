@@ -9,8 +9,20 @@ on:
       duration:
         description: "Ép thời lượng giây (để trống = ngẫu nhiên 180-360s)"
         required: false
+      upload:
+        description: "Upload lên YouTube sau khi dựng (true/false)"
+        required: false
+        default: "true"
+      privacy:
+        description: "Chế độ hiển thị: public / unlisted / private"
+        required: false
+        default: "public"
   schedule:
     - cron: "0 1 * * *"
+
+concurrency:
+  group: render-video
+  cancel-in-progress: false
 
 jobs:
   render:
@@ -48,3 +60,14 @@ jobs:
           name: video-mp4
           path: output/*
           retention-days: 7
+
+      - name: Tạo SEO bằng DeepSeek và upload YouTube
+        if: ${{ inputs.upload != 'false' }}
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASS: ${{ secrets.DB_PASS }}
+        run: python -m render.publish --dir output --privacy ${{ inputs.privacy || 'public' }}
