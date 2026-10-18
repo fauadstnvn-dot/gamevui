@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trình tạo video game 2K</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Trình tạo video game 2K</h1>
+    <p id="ffmpeg-info" class="muted">Đang kiểm tra ffmpeg...</p>
+  </header>
+
+  <main class="layout">
+    <section class="stage" aria-label="Màn chơi">
+      <canvas id="game-canvas" width="1280" height="720"></canvas>
+      <div id="progress" class="progress" hidden><div id="progress-bar"></div></div>
+      <p id="status" role="status" data-kind="info"></p>
+
+      <div id="result" class="result" hidden>
+        <video id="result-video" controls playsinline></video>
+        <a id="result-link" class="btn" href="#">Tải video</a>
+      </div>
+    </section>
+
+    <aside class="panel" aria-label="Thiết lập">
+      <div class="row">
+        <label for="seed">Seed (cùng seed = cùng video)</label>
+        <div class="inline">
+          <input id="seed" type="number" min="0" step="1">
+          <button id="random-seed" type="button" class="btn ghost">Ngẫu nhiên</button>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="row"><label for="mode">Chế độ</label>
+          <select id="mode"><option value="auto">Tự chơi (AI)</option><option value="manual">Thủ công</option></select></div>
+        <div class="row"><label for="outcome">Kết quả</label>
+          <select id="outcome"><option value="natural">Tự nhiên</option><option value="win">Thắng</option><option value="lose">Thua</option></select></div>
+        <div class="row"><label for="rider">Nhân vật</label><select id="rider"></select></div>
+        <div class="row"><label for="mount">Thú cưỡi</label><select id="mount"></select></div>
+        <div class="row"><label for="boss">Boss</label>
+          <div class="inline"><select id="boss" class="grow"></select>
+          <button id="boss-random" type="button" class="btn ghost" title="Chọn boss ngẫu nhiên">Mix</button></div></div>
+        <div class="row"><label for="lang">Ngôn ngữ</label>
+          <select id="lang"><option value="vi">Tiếng Việt</option><option value="en">English</option></select></div>
+        <div class="row"><label for="duration">Thời lượng (giây)</label>
+          <input id="duration" type="number" min="15" max="600" value="60"></div>
+        <div class="row"><label for="music-style">Nhạc nền</label><select id="music-style"></select></div>
+      </div>
+
+      <div class="row inline">
+        <label for="music-vol" class="grow">Âm lượng nhạc</label>
+        <input id="music-vol" type="range" min="0" max="1" step="0.05" value="0.5">
+        <label class="check"><input id="mute" type="checkbox"> Tắt tiếng xem thử</label>
+      </div>
+
+      <div class="row picker">
+        <div class="picker-head">
+          <span>Cảnh quan xuất hiện (<span id="sceneries-count">tự chọn</span>) - thứ tự bấm = thứ tự màn</span>
+          <span class="inline">
+            <button id="sceneries-random" type="button" class="link-btn">Ngẫu nhiên</button>
+            <button id="sceneries-clear" type="button" class="link-btn">Bỏ chọn</button>
+          </span>
+        </div>
+        <div id="sceneries" class="chips" role="group" aria-label="Cảnh quan"></div>
+      </div>
+
+      <div class="row picker">
+        <div class="picker-head">
+          <span>Quái vật xuất hiện (<span id="monsters-count">tự chọn</span>)</span>
+          <span class="inline">
+            <button id="monsters-random" type="button" class="link-btn">Ngẫu nhiên</button>
+            <button id="monsters-clear" type="button" class="link-btn">Bỏ chọn</button>
+          </span>
+        </div>
+        <div id="monsters" class="chips" role="group" aria-label="Quái vật"></div>
+      </div>
+
+      <button id="import-open" type="button" class="btn ghost">Nhập thú cưỡi / cảnh quan / boss / quái vật (ZIP)</button>
+
+      <button id="apply" type="button" class="btn ghost">Áp dụng &amp; xem thử</button>
+
+      <hr>
+      <h2>Xuất video</h2>
+      <div class="grid2">
+        <div class="row"><label for="size">Độ phân giải</label>
+          <select id="size">
+            <option value="2560x1440" selected>2K - 2560x1440</option>
+            <option value="1920x1080">Full HD - 1920x1080</option>
+            <option value="3840x2160">4K - 3840x2160</option>
+          </select></div>
+        <div class="row"><label for="fps">FPS</label>
+          <select id="fps"><option value="30" selected>30</option><option value="60">60</option><option value="24">24</option></select></div>
+        <div class="row"><label for="crf">Chất lượng</label>
+          <select id="crf"><option value="16">Rất cao (file lớn)</option><option value="18" selected>Cao</option><option value="22">Vừa</option><option value="26">Nhẹ</option></select></div>
+      </div>
+      <button id="make" type="button" class="btn primary">Tạo video 2K</button>
+      <p class="muted small">Trình duyệt dựng từng khung hình chính xác 1/FPS giây (không quay thời gian thực nên không giật), âm thanh dựng riêng cùng mốc thời gian, rồi ffmpeg trên host ghép thành MP4 H.264 + AAC với FPS cố định. Giữ tab mở trong lúc dựng.</p>
+
+      <h2>Video đã tạo</h2>
+      <ul id="files" class="files"></ul>
+    </aside>
+  </main>
+
+
+  <dialog id="import-dialog" aria-labelledby="import-title">
+    <div class="dlg-head">
+      <h2 id="import-title">Nhập dữ liệu tùy chỉnh</h2>
+      <button id="import-close" type="button" class="btn ghost">Đóng</button>
+    </div>
+    <div id="import-tabs" class="chips tabs" role="group" aria-label="Loại dữ liệu"></div>
+    <p id="import-hint" class="muted"></p>
+    <p class="muted small">File ZIP cần có:</p>
+    <ul id="import-files" class="files"></ul>
+    <pre id="import-json" class="code"></pre>
+    <p><a id="import-sample" class="btn ghost" href="#">Tải file ví dụ</a></p>
+    <label id="import-drop" class="drop">
+      <input id="import-file" type="file" accept=".zip,application/zip" multiple>
+      <span>Chọn hoặc kéo thả file .zip vào đây (tối đa 50MB mỗi file)</span>
+    </label>
+    <p id="import-busy" class="muted" hidden>Đang tải lên và kiểm tra...</p>
+    <div id="import-results"></div>
+    <h3>Đã nhập</h3>
+    <ul id="import-list" class="files"></ul>
+  </dialog>
+
+  <script src="assets/game.js"></script>
+</body>
+</html>
