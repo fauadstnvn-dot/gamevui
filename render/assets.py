@@ -19,6 +19,7 @@ CATEGORIES = {
     "priority_scenery": "chon-canh-vat",
     "music": "music",
 }
+SCENARIO_FOLDER = "kb-uu-tien"
 MUSIC_EXTS = {".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".opus"}
 MAX_MUSIC_BYTES = 120 * 1024 * 1024
 ALLOWED_PREFIXES = ("scenery/", "rig/mounts/", "bosses/", "monsters/", "sun/")
@@ -119,6 +120,58 @@ class HostClient:
             body = json.loads(res.read() or b"{}")
         if isinstance(body, dict) and body.get("ok") is False:
             raise RuntimeError(body.get("error", "host từ chối xóa"))
+
+
+def _scenario_clean(raw: dict) -> dict:
+    str_or_empty = lambda v: v.strip() if isinstance(v, str) else ""  # noqa: E731
+    monsters = [str_or_empty(m) for m in raw.get("monsters", []) if str_or_empty(m)] if isinstance(raw.get("monsters"), list) else []
+    return {
+        "id": str(raw.get("id", "")), "name": str_or_empty(raw.get("name")),
+        "order": raw.get("order", 0) if isinstance(raw.get("order"), int) else 0,
+        "created": raw.get("created", 0) if isinstance(raw.get("created"), int) else 0,
+        "boss": str_or_empty(raw.get("boss")), "scenery": str_or_empty(raw.get("scenery")),
+        "mount": str_or_empty(raw.get("mount")), "monsters": monsters,
+    }
+
+
+def _scenarios(self) -> list[dict]:
+    """Kịch bản ưu tiên (assets/kb-uu-tien/*.json) theo thứ tự ưu tiên tăng dần."""
+    raws: list[dict] = []
+    if self.is_local:
+        d = Path(self.host) / SCENARIO_FOLDER
+        for p in sorted(d.glob("*.json")) if d.is_dir() else []:
+            try:
+                raw = json.loads(p.read_text(encoding="utf-8"))
+                raw["id"] = p.stem
+                raws.append(raw)
+            except (OSError, ValueError):
+                continue
+    else:
+        try:
+            raws = json.loads(self._request(f"{self.host}/api.php?action=scenarios")).get("scenarios", [])
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ! không đọc được kịch bản ưu tiên: {exc}")
+    items = [_scenario_clean(r) for r in raws if isinstance(r, dict) and r.get("id")]
+    return sorted(items, key=lambda s: (s["order"], s["created"]))
+
+
+def _delete_scenario(self, scenario_id: str) -> None:
+    if self.is_local:
+        (Path(self.host) / SCENARIO_FOLDER / f"{scenario_id}.json").unlink(missing_ok=True)
+        return
+    headers = {"User-Agent": USER_AGENT}
+    if self.token:
+        headers["X-Token"] = self.token
+    q = urllib.parse.urlencode({"action": "scenario_delete", "id": scenario_id})
+    req = urllib.request.Request(f"{self.host}/api.php?{q}", data=b"", headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=60) as res:
+        body = json.loads(res.read() or b"{}")
+    if isinstance(body, dict) and body.get("ok") is False:
+        raise RuntimeError(body.get("error", "host từ chối xóa kịch bản"))
+
+
+HostClient.scenarios = _scenarios
+HostClient.delete_scenario = _delete_scenario
 
 
 def safe_extract(zip_path: Path, game_dir: Path) -> list[str]:
