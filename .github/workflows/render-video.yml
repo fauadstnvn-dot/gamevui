@@ -58,7 +58,7 @@ jobs:
           npm install --no-audit --no-fund
           npx playwright install --with-deps chromium
 
-      - name: Chọn chất liệu ngẫu nhiên từ host
+      - name: Chọn chất liệu từ host (kịch bản ưu tiên trước, thiếu thì ngẫu nhiên)
         env:
           ASSET_HOST_URL: ${{ secrets.ASSET_HOST_URL }}
           ASSET_HOST_TOKEN: ${{ secrets.ASSET_HOST_TOKEN }}
@@ -71,12 +71,6 @@ jobs:
       - name: Dựng video 2K bằng game gốc (thanh máu, chữ, hiệu ứng, âm thanh)
         run: node runner/render.mjs --plan plan.json --out output --width 2560 --height 1440 --fps ${{ inputs.fps || 30 }} --timeout 340
 
-      - name: Xóa cảnh vật đã dùng trong chon-canh-vat trên host
-        env:
-          ASSET_HOST_URL: ${{ secrets.ASSET_HOST_URL }}
-          ASSET_HOST_TOKEN: ${{ secrets.ASSET_HOST_TOKEN }}
-        run: python -m render.cleanup --plan plan.json
-
       - name: Tạo SEO bằng DeepSeek và upload YouTube
         id: publish
         if: ${{ inputs.upload != 'false' }}
@@ -88,6 +82,13 @@ jobs:
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASS: ${{ secrets.DB_PASS }}
         run: python -m render.publish --dir output --category 20 --privacy ${{ inputs.privacy || 'public' }}
+
+      - name: Xóa kịch bản ưu tiên và cảnh chon-canh-vat đã dùng (sau khi upload thành công)
+        if: ${{ success() && (steps.publish.outcome == 'success' || inputs.upload == 'false') }}
+        env:
+          ASSET_HOST_URL: ${{ secrets.ASSET_HOST_URL }}
+          ASSET_HOST_TOKEN: ${{ secrets.ASSET_HOST_TOKEN }}
+        run: python -m render.cleanup --plan plan.json
 
       - name: Giữ lại video nếu chưa upload thành công (để tải về thủ công)
         if: ${{ always() && steps.publish.outcome != 'success' }}
