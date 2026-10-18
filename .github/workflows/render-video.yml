@@ -12,7 +12,7 @@ on:
       fps:
         description: "FPS video (60 / 30 / 24)"
         required: false
-        default: "60"
+        default: "30"
       upload:
         description: "Upload lên YouTube sau khi dựng (true/false)"
         required: false
@@ -69,7 +69,7 @@ jobs:
           python -m render.prepare --plan plan.json $ARGS
 
       - name: Dựng video 2K bằng game gốc (thanh máu, chữ, hiệu ứng, âm thanh)
-        run: node runner/render.mjs --plan plan.json --out output --width 2560 --height 1440 --fps ${{ inputs.fps || 60 }} --timeout 340
+        run: node runner/render.mjs --plan plan.json --out output --width 2560 --height 1440 --fps ${{ inputs.fps || 30 }} --timeout 340
 
       - name: Xóa cảnh vật đã dùng trong chon-canh-vat trên host
         env:
