@@ -9,6 +9,10 @@ on:
       duration:
         description: "Ép thời lượng giây (để trống = ngẫu nhiên 180-360s)"
         required: false
+      fps:
+        description: "FPS video (60 / 30 / 24)"
+        required: false
+        default: "60"
       upload:
         description: "Upload lên YouTube sau khi dựng (true/false)"
         required: false
@@ -27,7 +31,7 @@ concurrency:
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
 
@@ -65,7 +69,7 @@ jobs:
           python -m render.prepare --plan plan.json $ARGS
 
       - name: Dựng video 2K bằng game gốc (thanh máu, chữ, hiệu ứng, âm thanh)
-        run: node runner/render.mjs --plan plan.json --out output --width 2560 --height 1440 --fps 30
+        run: node runner/render.mjs --plan plan.json --out output --width 2560 --height 1440 --fps ${{ inputs.fps || 60 }} --timeout 340
 
       - name: Xóa cảnh vật đã dùng trong chon-canh-vat trên host
         env:
@@ -83,7 +87,7 @@ jobs:
           DB_NAME: ${{ secrets.DB_NAME }}
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASS: ${{ secrets.DB_PASS }}
-        run: python -m render.publish --dir output --privacy ${{ inputs.privacy || 'public' }}
+        run: python -m render.publish --dir output --category 20 --privacy ${{ inputs.privacy || 'public' }}
 
       - name: Giữ lại video nếu chưa upload thành công (để tải về thủ công)
         if: ${{ always() && steps.publish.outcome != 'success' }}
