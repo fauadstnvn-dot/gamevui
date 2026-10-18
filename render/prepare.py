@@ -22,6 +22,85 @@ def manifest_paths(kind: str, entry: dict) -> list[str]:
     return [*entry["frames"], *entry.get("attack", [])]
 
 
+def webp_size(path: Path) -> list[int]:
+    """Đọc kích thước ảnh webp (không phụ thuộc thư viện ngoài)."""
+    d = path.read_bytes()[:64]
+    if d[:4] != b"RIFF" or d[8:12] != b"WEBP":
+        raise RuntimeError(f"{path.name}: không phải webp")
+    t = d[12:16]
+    if t == b"VP8X":
+        return [int.from_bytes(d[24:27], "little") + 1, int.from_bytes(d[27:30], "little") + 1]
+    if t == b"VP8L":
+        b = int.from_bytes(d[21:25], "little")
+        return [(b & 0x3FFF) + 1, ((b >> 14) & 0x3FFF) + 1]
+    if t == b"VP8 ":
+        return [int.from_bytes(d[26:28], "little") & 0x3FFF, int.from_bytes(d[28:30], "little") & 0x3FFF]
+    raise RuntimeError(f"{path.name}: webp không nhận dạng được")
+
+
+def register_scenery(ident: str, game: Path, manifest: dict) -> dict:
+    """Cảnh mới chưa có trong manifest: tạo entry từ 5 lớp ảnh đã giải nén (scenery/<id>/<lớp>.webp)."""
+    layers = {}
+    for name in ("sky", "far", "mid", "near", "road"):
+        f = game / "scenery" / ident / f"{name}.webp"
+        if not f.is_file():
+            raise RuntimeError(f"cảnh mới thiếu lớp {name}.webp")
+        layers[name] = {"src": f"scenery/{ident}/{name}.webp", "size": webp_size(f)}
+    entry = {"id": ident, "layers": layers}
+    manifest.setdefault("sceneries", []).append(entry)
+    print(f"  + đăng ký cảnh mới vào manifest: {ident}")
+    return entry
+
+
+def numbered(folder: Path, prefix: str) -> list[Path]:
+    """Các file <prefix>-<số>.webp trong folder, sắp theo số."""
+    found = []
+    for f in folder.glob(f"{prefix}-*.webp"):
+        tail = f.stem[len(prefix) + 1:]
+        if tail.isdigit():
+            found.append((int(tail), f))
+    return [f for _, f in sorted(found)]
+
+
+def register_mount(ident: str, game: Path, manifest: dict) -> dict:
+    """Thú cưỡi mới: rig/mounts/<id>/ gồm pose-idle, pose-jump-up, pose-jump-down và run-N."""
+    folder = game / "rig" / "mounts" / ident
+    run = numbered(folder, "run")
+    poses = {k: folder / f"pose-{n}.webp" for k, n in (("idle", "idle"), ("up", "jump-up"), ("down", "jump-down"))}
+    missing = [f.name for f in poses.values() if not f.is_file()]
+    if missing or len(run) < 2:
+        raise RuntimeError(f"thú cưỡi mới thiếu ảnh: {', '.join(missing) or 'cần tối thiểu 2 khung run-N'}")
+    rel = lambda f: f"rig/mounts/{ident}/{f.name}"
+    entry = {"id": ident, "run": [rel(f) for f in run], "idle": rel(poses["idle"]),
+             "up": rel(poses["up"]), "down": rel(poses["down"]), "size": webp_size(run[0])}
+    manifest.setdefault("mounts", []).append(entry)
+    print(f"  + đăng ký thú cưỡi mới vào manifest: {ident}")
+    return entry
+
+
+def register_monster(ident: str, game: Path, manifest: dict) -> dict:
+    """Quái vật mới: monsters/<id>/ với frame-N | walk-N (+attack-N) | fly-N (+attack-N)."""
+    folder = game / "monsters" / ident
+    kind, frames = "walk", []
+    for prefix, k in (("fly", "fly"), ("walk", "walk"), ("frame", "walk")):
+        frames = numbered(folder, prefix)
+        if frames:
+            kind = k
+            break
+    if len(frames) < 2:
+        raise RuntimeError("quái vật mới cần tối thiểu 2 khung (frame-N / walk-N / fly-N)")
+    attack = numbered(folder, "attack")
+    rel = lambda f: f"monsters/{ident}/{f.name}"
+    entry = {"id": ident, "kind": kind, "frames": [rel(f) for f in frames],
+             "attack": [rel(f) for f in attack], "size": webp_size(frames[0])}
+    manifest.setdefault("monsters", []).append(entry)
+    print(f"  + đăng ký quái vật mới vào manifest: {ident} ({kind})")
+    return entry
+
+
+REGISTER = {"sceneries": register_scenery, "mounts": register_mount, "monsters": register_monster}
+
+
 def try_pick(client: HostClient, kind: str, files: list[str], rng: random.Random, manifest: dict,
              key: str, game: Path, count: int = 1) -> list[str]:
     """Thử lần lượt cho tới khi đủ `count` gói hợp lệ (có trong manifest và đủ ảnh sau khi giải nén)."""
@@ -37,7 +116,9 @@ def try_pick(client: HostClient, kind: str, files: list[str], rng: random.Random
                 ok = True
             else:
                 if ident not in entries:
-                    raise RuntimeError("id không có trong manifest game")
+                    if key not in REGISTER:
+                        raise RuntimeError("id không có trong manifest game")
+                    entries[ident] = REGISTER[key](ident, game, manifest)
                 missing = [p for p in manifest_paths(kind, entries[ident]) if not (game / p).is_file()]
                 if missing:
                     raise RuntimeError(f"thiếu {len(missing)} ảnh, ví dụ {missing[0]}")
