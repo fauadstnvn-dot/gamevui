@@ -248,10 +248,15 @@ for (;;) {
   if (Date.now() > deadline) throw new Error('Quá thời gian dựng video')
   await new Promise((r) => setTimeout(r, 5000))
 }
+const snap = await page.evaluate(() => window.__lastSnap ?? null).catch(() => null)
 await browser.close()
 server.close()
 
 const meta = {
+  result: snap?.result ?? null,
+  stats: snap
+    ? { kills: snap.kills, sunKills: snap.sunKills, score: snap.score, coins: snap.coins, time: snap.time, stage: snap.stage, stages: snap.stages, hp: snap.hp }
+    : null,
   seed: plan.seed,
   duration: plan.duration,
   resolution: `${width}x${height}`,
