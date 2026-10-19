@@ -21,6 +21,23 @@ on:
         description: "Chế độ hiển thị: public / unlisted / private"
         required: false
         default: "public"
+      intro:
+        description: "Bật mở màn VS (thú cưỡi vs boss + quái, câu hỏi, đếm ngược 3-2-1, READY/GO)"
+        type: boolean
+        required: false
+        default: false
+      intro_style:
+        description: "Kiểu ảnh mở màn (chỉ dùng khi bật mở màn)"
+        type: choice
+        required: false
+        default: random
+        options: [random, clash, inferno, cyber, arena, storm]
+      intro_countdown:
+        description: "Kiểu đồng hồ đếm ngược (chỉ dùng khi bật mở màn)"
+        type: choice
+        required: false
+        default: random
+        options: [random, ring, shock, tile, slice]
   schedule:
     - cron: "0 1 * * *"
 
@@ -70,6 +87,14 @@ jobs:
 
       - name: Dựng video 2K bằng game gốc (thanh máu, chữ, hiệu ứng, âm thanh)
         run: node runner/render.mjs --plan plan.json --out output --width 2560 --height 1440 --fps ${{ inputs.fps || 30 }} --timeout 340
+
+      - name: Dựng mở màn VS và ghép vào đầu video (tùy chọn)
+        # Chạy tay: theo ô "intro". Chạy theo lịch (cron): bật nếu biến repo INTRO_DEFAULT = true.
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.intro) || (github.event_name != 'workflow_dispatch' && vars.INTRO_DEFAULT == 'true') }}
+        env:
+          INTRO_STYLE: ${{ inputs.intro_style || 'random' }}
+          INTRO_COUNTDOWN: ${{ inputs.intro_countdown || 'random' }}
+        run: node runner/intro.mjs --plan plan.json --out output --width 2560 --height 1440 --fps ${{ inputs.fps || 30 }} --style "$INTRO_STYLE" --countdown "$INTRO_COUNTDOWN"
 
       - name: Tạo SEO bằng DeepSeek và upload YouTube
         id: publish
