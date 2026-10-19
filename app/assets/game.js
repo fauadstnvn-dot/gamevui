@@ -7191,7 +7191,8 @@
       ((e.audioClock = y / t),
         await e.advance(S - c),
         (c = S),
-        u === 1 / 0 && e.snapshot().result && (u = y + l));
+        (window.__lastSnap = e.snapshot()),
+        u === 1 / 0 && window.__lastSnap.result && (u = y + l));
       let f = await ha(e.canvas);
       (h.push(f),
         (m += f.size),
