@@ -23,10 +23,10 @@ on:
         default: "public"
       intro:
         description: "Bật mở màn VS (thú cưỡi vs boss + quái, câu hỏi, đếm ngược 3-2-1, READY/GO)"
-  type: boolean
-  required: false
-  default: true
-  intro_style:
+        type: boolean
+        required: false
+        default: true
+      intro_style:
         description: "Kiểu ảnh mở màn (chỉ dùng khi bật mở màn)"
         type: choice
         required: false
@@ -40,10 +40,10 @@ on:
         options: [random, ring, shock, tile, slice, stopwatch, radar, digital, hex]
       outro:
         description: "Bật cảnh kết thúc (công bố bên thắng + câu trả lời, thống kê, kêu gọi đăng ký kênh)"
-  type: boolean
-  required: false
-  default: true
-  outro_style:
+        type: boolean
+        required: false
+        default: true
+      outro_style:
         description: "Kiểu công bố bên thắng (chỉ dùng khi bật kết thúc)"
         type: choice
         required: false
