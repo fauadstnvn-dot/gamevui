@@ -1240,6 +1240,7 @@
       fireCd: 0,
       invuln: 1.5,
       gun: 0,
+      weapon: 0,
       doubleT: 0,
       haloT: 0,
       reverseT: 0,
@@ -1500,6 +1501,58 @@
     return (
       e.x < n.x + n.w && e.x + e.w > n.x && e.y < n.y + n.h && e.y + e.h > n.y
     );
+  }
+
+  var GV_NAMES = [["S\u00FAng","Gun"],["Plasma","Plasma"],["L\u1EEDa","Inferno"],["S\u00E9t","Thunder"],["H\u01B0 Kh\u00F4ng","Void"]];
+  function gvName(w, lang) { let n = GV_NAMES[w | 0] || GV_NAMES[0]; return lang === "en" ? n[1] : n[0]; }
+  function gvSync(e) {
+    let a = e.player, w = window.gvWeapon;
+    if (w == null) w = 0;
+    a.weapon = w < 0 ? ((e.stage || 0) % 5) : w;
+  }
+  function gvF(a) {
+    let l = Math.min(9, a.gun | 0), w = a.weapon | 0;
+    switch (w) {
+      case 1: return { d: 0.85, c: 0.7, v: 1500, p: (l >= 3 ? 1 : 0) + (l >= 7 ? 1 : 0), h: 0, sp: 0, sc: 1 + l * 0.04, pairs: 0 };
+      case 2: return { d: 1.7, c: 1.6, v: 850, p: 0, h: 0, sp: 90 + l * 10, sc: 1.25 + l * 0.07, pairs: 0 };
+      case 3: return { d: 1.0, c: 0.9, v: 1800, p: 1 + (l >= 5 ? 1 : 0), h: 0, sp: 0, sc: 1.05 + l * 0.04, pairs: (l >= 3 ? 1 : 0) + (l >= 7 ? 1 : 0) };
+      case 4: return { d: 1.25, c: 1.0, v: 1100, p: 2 + (l >= 6 ? 1 : 0), h: 1, sp: 0, sc: 1.1 + l * 0.05, pairs: l >= 8 ? 1 : 0 };
+      default: return { d: 1, c: 1, v: 1000, p: 0, h: 0, sp: 0, sc: 1, pairs: 0 };
+    }
+  }
+  function gvHome(e, o, dt) {
+    if (!o.home) return;
+    let best = null, bd = 1e9;
+    for (let m of e.monsters) {
+      let u = Ee(m), d = Math.hypot(u.x + u.w / 2 - o.x, u.y + u.h / 2 - o.y);
+      if (u.x + u.w / 2 > o.x - 20 && d < bd && !o.hitIds.includes(m.uid)) { bd = d; best = u; }
+    }
+    if (!best) return;
+    let sp = Math.hypot(o.vx, o.vy), want = Math.atan2(best.y + best.h / 2 - o.y, best.x + best.w / 2 - o.x), cur = Math.atan2(o.vy, o.vx);
+    let diff = Math.atan2(Math.sin(want - cur), Math.cos(want - cur)), step = Math.max(-5 * dt, Math.min(5 * dt, diff));
+    cur += step;
+    o.vx = Math.cos(cur) * sp; o.vy = Math.sin(cur) * sp; o.angle = cur;
+  }
+  function gvSplash(e, s, hitM) {
+    A(e, "boom", s.x, s.y, s.splash * 1.3, 0.35);
+    for (let m of e.monsters.slice()) {
+      if (m === hitM) continue;
+      let u = Ee(m);
+      if (Math.hypot(u.x + u.w / 2 - s.x, u.y + u.h / 2 - s.y) < s.splash) $e(e, m, Math.max(1, Math.round(s.dmg * 0.5)));
+    }
+  }
+  function gvKey(code) {
+    let m = /^(?:Digit|Numpad)([1-7])$/.exec(code);
+    if (!m) return;
+    let n = Number(m[1]);
+    let sel = document.getElementById("weapon");
+    if (n === 7) {
+      if (sel) sel.value = "-2";
+      if (window.gvResolveWeapon) window.gvResolveWeapon();
+      return;
+    }
+    window.gvWeapon = n === 6 ? -1 : n - 1;
+    if (sel) sel.value = String(window.gvWeapon);
   }
   function vn(e) {
     return 9 + e * 4;
@@ -2734,6 +2787,7 @@
   }
   function Rn(e, n, t) {
     let a = e.player;
+    gvSync(e);
     if (
       ((a.fireCd -= t),
       (a.doubleT = Math.max(0, a.doubleT - t)),
@@ -2743,25 +2797,28 @@
     let i = we(a),
       r = Math.atan2(n.aim.y - i.y, n.aim.x - i.x);
     ((r = Math.max(-1.35, Math.min(0.5, r))), (a.facingAngle = r));
-    let s = vn(a.gun);
+    let F = gvF(a), s = Math.max(1, Math.round(vn(a.gun) * F.d));
     N(e, "shoot");
     let o = (l, u = 0) => {
       e.bullets.push({
         x: i.x,
         y: i.y + u,
-        vx: Math.cos(l) * 1e3,
-        vy: Math.sin(l) * 1e3,
+        vx: Math.cos(l) * F.v,
+        vy: Math.sin(l) * F.v,
         dmg: s,
-        idx: Math.min(a.gun, e.manifest.bullets.length - 1),
+        idx: Math.min((a.weapon | 0) * 10 + Math.min(a.gun, 9), e.manifest.bullets.length - 1),
         life: 1.6,
-        pierce: a.gun >= 5 ? 1 : 0,
+        pierce: (a.gun >= 5 ? 1 : 0) + F.p,
+        home: F.h,
+        splash: F.sp,
+        sc: F.sc,
         hitIds: [],
         angle: l,
       });
     };
     (o(r),
       a.doubleT > 0 && (o(r - 0.09, -8), o(r + 0.09, 8)),
-      (a.fireCd = Sn(a.gun)));
+      (F.pairs >= 1 && (o(r - 0.08, -6), o(r + 0.08, 6)), F.pairs >= 2 && (o(r - 0.16, -12), o(r + 0.16, 12)), (a.fireCd = Sn(a.gun) * F.c)));
   }
   function ft(e, n, t) {
     let a = e.player;
@@ -3057,7 +3114,7 @@
       o.x < -o.w && (e.monsters = e.monsters.filter((u) => u !== o));
     }
     for (let o of e.bullets.slice())
-      ((o.x += o.vx * n),
+      (gvHome(e, o, n), (o.x += o.vx * n),
         (o.y += o.vy * n),
         (o.life -= n),
         (o.life <= 0 || o.x > M + 80 || o.y < -80 || o.y > E + 40) &&
@@ -3181,8 +3238,9 @@
         if (s.x > u.x && s.x < u.x + u.w && s.y > u.y && s.y < u.y + u.h)
           if (
             (s.hitIds.push(l.uid),
-            A(e, "hit", s.x, s.y, 70, 0.22, s.idx),
+            A(e, "hit", s.x, s.y, 70 * (s.sc || 1) * (s.idx >= 10 ? 1.7 : 1), 0.22, s.idx),
             $e(e, l, s.dmg),
+            s.splash > 0 && gvSplash(e, s, l),
             s.pierce > 0)
           )
             s.pierce--;
@@ -4101,7 +4159,7 @@
         e.fill(),
         e.stroke());
     } else if (a.kind === "gun") {
-      let l = Math.min(a.gunIdx, t.manifest.guns.length - 1),
+      let l = Math.min(((t.player.weapon | 0) * 10) + Math.min(a.gunIdx, 9), t.manifest.guns.length - 1),
         u = G(n, t.manifest.guns[l].src);
       if (u) {
         let h = (u.naturalHeight * 84) / u.naturalWidth;
@@ -4311,7 +4369,7 @@
     c &&
       (a.hurtFlash > 0 && (e.filter = "brightness(1.8) saturate(1.5)"),
       e.drawImage(c, f, p, y, S));
-    let w = Math.min(a.gun, t.manifest.guns.length - 1),
+    let w = Math.min((a.weapon | 0) * 10 + Math.min(a.gun, 9), t.manifest.guns.length - 1),
       b = G(n, t.manifest.guns[w].src);
     if (b) {
       let I = we(a),
@@ -4371,8 +4429,20 @@
     for (let a of t.bullets) {
       let i = G(n, t.manifest.bullets[a.idx].src);
       if ((e.save(), e.translate(a.x, a.y), e.rotate(a.angle), i)) {
-        let s = (i.naturalHeight * 70) / i.naturalWidth;
-        e.drawImage(i, -70 / 2, -s / 2, 70, s);
+        let z = 70 * (a.sc || 1),
+          s = (i.naturalHeight * z) / i.naturalWidth;
+        if (a.idx >= 10) {
+          e.globalCompositeOperation = "lighter";
+          for (let q = 1; q <= 4; q++) {
+            e.globalAlpha = 0.34 / q;
+            e.drawImage(i, -z / 2 - q * z * 0.26, -s / 2, z, s);
+          }
+          e.globalAlpha = 0.45;
+          e.drawImage(i, -z / 2, -s / 2, z * 1.12, s * 1.12);
+          e.globalAlpha = 1;
+          e.globalCompositeOperation = "source-over";
+        }
+        e.drawImage(i, -z / 2, -s / 2, z, s);
       } else ((e.fillStyle = "#ffe28a"), e.fillRect(-12, -4, 24, 8));
       e.restore();
     }
@@ -4805,7 +4875,7 @@
         82,
       ),
       (e.font = `800 20px ${s}`));
-    let gt = `${T(t.lang, "S\xFAng", "Gun")} ${i.gun + 1}`,
+    let gt = `${gvName(i.weapon, t.lang)} ${i.gun + 1}`,
       gw = e.measureText(gt).width;
     ((e.font = `600 16px ${r}`),
       lvFit(
@@ -6885,6 +6955,7 @@
               o.tagName === "SELECT" ||
               o.tagName === "TEXTAREA")) ||
             (this.keys.add(s.code),
+            gvKey(s.code),
             this.unlockAudio(),
             [
               "Space",
