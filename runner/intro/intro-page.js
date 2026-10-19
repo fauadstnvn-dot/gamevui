@@ -3,7 +3,7 @@
 (() => {
   const W = 1920
   const H = 1080
-  const TL = {
+  const TLI = {
     slideEnd: 0.9,
     vsAt: 0.9,
     questionAt: 2.2,
@@ -12,6 +12,8 @@
     goAt: 8.8,
     end: 9.7,
   }
+  let TL = TLI
+  let mode = 'intro'
 
   const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x))
   const lerp = (a, b, k) => a + (b - a) * k
@@ -42,6 +44,11 @@
     cyber: { colA: '#00f0ff', colB: '#ff2bd6', accent: '#b6ff3b', bg: ['#03041a', '#0b0630', '#16033a'], font: 'RussoOne' },
     arena: { colA: '#3fe0a0', colB: '#b02bff', accent: '#ffd23d', bg: ['#0c0720', '#26104a', '#0a0414'], font: 'Bebas' },
     storm: { colA: '#5ad7ff', colB: '#ff5a3d', accent: '#e6f3ff', bg: ['#050b14', '#0d1d33', '#0a0f1c'], font: 'Anton' },
+    frost: { colA: '#7fdcff', colB: '#b57bff', accent: '#e9fbff', bg: ['#06142a', '#0f2b52', '#0a1a33'], font: 'Bebas' },
+    toxic: { colA: '#a6ff00', colB: '#ff2e7e', accent: '#e6ff4d', bg: ['#04120a', '#0a2e12', '#05140a'], font: 'RussoOne' },
+    royal: { colA: '#ffd23d', colB: '#7a3bff', accent: '#fff1a8', bg: ['#12061f', '#2a0f4a', '#0c0414'], font: 'Bebas' },
+    void: { colA: '#46e6ff', colB: '#ff3b6b', accent: '#c9a8ff', bg: ['#02020a', '#0a0620', '#050210'], font: 'RussoOne' },
+    sunset: { colA: '#ff9a3d', colB: '#d62bff', accent: '#ffef7a', bg: ['#1a0630', '#4a0a4a', '#2a0626'], font: 'Anton' },
   }
   const COUNT_COLORS = ['#ff3b3b', '#ffd23d', '#3fe0ff'] // 1, 2, 3 (index = n-1)
 
@@ -64,6 +71,8 @@
 
   async function init(config) {
     cfg = config
+    mode = cfg.mode === 'outro' ? 'outro' : 'intro'
+    TL = mode === 'outro' ? window.IntroOutro.TL : TLI
     cfg.theme = THEMES[cfg.style] ?? THEMES.clash
     canvas = document.createElement('canvas')
     canvas.width = cfg.width
@@ -209,6 +218,150 @@
         }
         break
       }
+      case 'frost': {
+        const glow = ctx.createRadialGradient(W / 2, H * 0.35, 40, W / 2, H * 0.35, 1000)
+        glow.addColorStop(0, 'rgba(160,230,255,0.28)')
+        glow.addColorStop(1, 'rgba(160,230,255,0)')
+        ctx.fillStyle = glow
+        ctx.fillRect(0, 0, W, H)
+        ctx.fillStyle = 'rgba(220,245,255,0.85)'
+        for (let i = 0; i < 120; i++) {
+          const y = ((hash(i) * H + t * (60 + hash(i + 1) * 160)) % (H + 20)) - 10
+          const x = (hash(i + 2) * W + Math.sin(t * 0.8 + i) * 50 + W) % W
+          ctx.globalAlpha = 0.35 + hash(i + 4) * 0.6
+          ctx.beginPath()
+          ctx.arc(x, y, 2 + hash(i + 3) * 5, 0, 6.283)
+          ctx.fill()
+        }
+        ctx.globalAlpha = 1
+        ctx.fillStyle = 'rgba(150,215,255,0.18)'
+        for (let i = 0; i < 9; i++) {
+          const x = i * 260 - 40
+          const h = 160 + hash(i + 11) * 220
+          ctx.beginPath()
+          ctx.moveTo(x, H)
+          ctx.lineTo(x + 90, H - h)
+          ctx.lineTo(x + 200, H)
+          ctx.fill()
+        }
+        break
+      }
+      case 'toxic': {
+        const g2 = ctx.createRadialGradient(W / 2, H + 60, 40, W / 2, H, 1000)
+        g2.addColorStop(0, 'rgba(120,255,0,0.45)')
+        g2.addColorStop(1, 'rgba(120,255,0,0)')
+        ctx.fillStyle = g2
+        ctx.fillRect(0, 0, W, H)
+        ctx.lineWidth = 3
+        for (let i = 0; i < 60; i++) {
+          const life = (t * (0.1 + hash(i + 2) * 0.18) + hash(i)) % 1
+          const x = hash(i + 1) * W + Math.sin(t * 1.2 + i) * 30
+          const y = H + 40 - life * (H + 120)
+          const r = 10 + hash(i + 3) * 40 * (0.5 + life * 0.6)
+          ctx.fillStyle = `rgba(120,255,0,${0.1 * (1 - life)})`
+          ctx.strokeStyle = `rgba(190,255,90,${0.55 * (1 - life)})`
+          ctx.beginPath()
+          ctx.arc(x, y, r, 0, 6.283)
+          ctx.fill()
+          ctx.stroke()
+        }
+        break
+      }
+      case 'royal': {
+        const rg = ctx.createRadialGradient(W / 2, H * 0.45, 50, W / 2, H * 0.45, 950)
+        rg.addColorStop(0, 'rgba(255,210,61,0.32)')
+        rg.addColorStop(1, 'rgba(255,210,61,0)')
+        ctx.fillStyle = rg
+        ctx.fillRect(0, 0, W, H)
+        ctx.strokeStyle = 'rgba(255,210,61,0.09)'
+        ctx.lineWidth = 2
+        for (let i = -10; i < 30; i++) {
+          ctx.beginPath()
+          ctx.moveTo(i * 120, 0)
+          ctx.lineTo(i * 120 + H, H)
+          ctx.moveTo(i * 120 + H, 0)
+          ctx.lineTo(i * 120, H)
+          ctx.stroke()
+        }
+        ctx.fillStyle = '#ffe9a0'
+        for (let i = 0; i < 80; i++) {
+          const y = (hash(i + 2) * H - t * (20 + hash(i) * 50) + H * 4) % H
+          const x = hash(i) * W
+          const r = 2 + hash(i + 5) * 5
+          ctx.globalAlpha = 0.2 + 0.8 * Math.abs(Math.sin(t * 2 + i))
+          ctx.fillRect(x - r, y - 1, r * 2, 2)
+          ctx.fillRect(x - 1, y - r, 2, r * 2)
+        }
+        ctx.globalAlpha = 1
+        break
+      }
+      case 'void': {
+        ctx.fillStyle = '#fff'
+        for (let i = 0; i < 140; i++) {
+          const z = 0.3 + hash(i) * 1.2
+          const x = (hash(i + 1) * W - t * 30 * z + W * 4) % W
+          ctx.globalAlpha = 0.3 + 0.7 * Math.abs(Math.sin(t * z + i))
+          ctx.beginPath()
+          ctx.arc(x, hash(i + 2) * H, z * 1.6, 0, 6.283)
+          ctx.fill()
+        }
+        ctx.globalAlpha = 1
+        ctx.save()
+        ctx.translate(W / 2, H * 0.5)
+        ctx.lineWidth = 6
+        for (let k = 0; k < 4; k++) {
+          ctx.save()
+          ctx.rotate(t * (0.25 + k * 0.1))
+          ctx.strokeStyle = hexA(k % 2 ? th.colB : th.colA, 0.24)
+          ctx.beginPath()
+          ctx.ellipse(0, 0, 420 + k * 110, 150 + k * 40, k * 0.7, 0, 5)
+          ctx.stroke()
+          ctx.restore()
+        }
+        ctx.restore()
+        break
+      }
+      case 'sunset': {
+        const sy = H * 0.46
+        const sr = 330
+        const sg2 = ctx.createLinearGradient(0, sy - sr, 0, sy + sr)
+        sg2.addColorStop(0, '#ffef7a')
+        sg2.addColorStop(1, '#ff4fa0')
+        ctx.save()
+        ctx.beginPath()
+        ctx.arc(W / 2, sy, sr, 0, 6.283)
+        ctx.clip()
+        ctx.fillStyle = sg2
+        ctx.fillRect(W / 2 - sr, sy - sr, sr * 2, sr * 2)
+        ctx.fillStyle = th.bg[1]
+        for (let i = 0; i < 9; i++) ctx.fillRect(W / 2 - sr, sy + 20 + i * 36, sr * 2, 3 + i * 3.2)
+        ctx.restore()
+        const gy = H * 0.64
+        ctx.fillStyle = '#12041f'
+        ctx.fillRect(0, gy, W, H - gy)
+        ctx.strokeStyle = 'rgba(255,79,160,0.4)'
+        ctx.lineWidth = 2
+        for (let i = -20; i <= 20; i++) {
+          ctx.beginPath()
+          ctx.moveTo(W / 2 + i * 40, gy)
+          ctx.lineTo(W / 2 + i * 240, H)
+          ctx.stroke()
+        }
+        const off = (t * 0.7) % 1
+        for (let i = 0; i < 10; i++) {
+          const y = gy + Math.pow((i + off) / 10, 2) * (H - gy)
+          ctx.beginPath()
+          ctx.moveTo(0, y)
+          ctx.lineTo(W, y)
+          ctx.stroke()
+        }
+        ctx.fillStyle = '#12041f'
+        for (let i = 0; i < 22; i++) {
+          const bh = 40 + hash(i + 31) * 150
+          ctx.fillRect(i * 90 + 10, gy - bh, 70, bh)
+        }
+        break
+      }
       default: {
         // clash: tia tốc độ chạy ngang
         ctx.save()
@@ -221,6 +374,11 @@
         }
         ctx.restore()
       }
+    }
+
+    if (mode === 'outro') {
+      drawParticles(t)
+      return
     }
 
     // hai phe: tấm nghiêng nhuộm màu
@@ -258,7 +416,11 @@
       ctx.restore()
     }
 
-    // tàn lửa / hạt sáng bay lên
+    drawParticles(t)
+  }
+
+  function drawParticles(t) {
+    const th = cfg.theme
     for (const p of particles) {
       const y = (p.y - t * p.v + H * 4) % H
       const x = p.x + Math.sin(t * p.s + p.p) * 30
@@ -434,6 +596,34 @@
         grad.addColorStop(0, '#ffffff')
         grad.addColorStop(1, '#8fc7ff')
         glow = '#7fc8ff'
+        break
+      case 'frost':
+        grad.addColorStop(0, '#ffffff')
+        grad.addColorStop(1, '#7fdcff')
+        glow = '#9be8ff'
+        break
+      case 'toxic':
+        grad.addColorStop(0, '#f4ffb0')
+        grad.addColorStop(0.5, '#a6ff00')
+        grad.addColorStop(1, '#1f8a00')
+        glow = '#a6ff00'
+        break
+      case 'royal':
+        grad.addColorStop(0, '#fff6c8')
+        grad.addColorStop(0.5, '#ffd23d')
+        grad.addColorStop(1, '#9a5b00')
+        glow = '#b57bff'
+        break
+      case 'void':
+        grad.addColorStop(0, '#ffffff')
+        grad.addColorStop(1, '#c9a8ff')
+        glow = '#7a3bff'
+        break
+      case 'sunset':
+        grad.addColorStop(0, '#fff2a0')
+        grad.addColorStop(0.5, '#ff9a3d')
+        grad.addColorStop(1, '#d62bff')
+        glow = '#ff4fa0'
         break
       default:
         grad.addColorStop(0, '#fff7a8')
@@ -659,6 +849,204 @@
         shockwave(cx, cy, p / 0.5, col, 650, 12)
         break
       }
+      case 'stopwatch': {
+        ctx.save()
+        ctx.translate(cx, cy)
+        ctx.globalAlpha = fadeOut
+        const R = 270
+        const sc = 0.85 + 0.15 * popIn
+        ctx.scale(sc, sc)
+        ctx.fillStyle = '#c9ced8'
+        roundRect(-34, -R - 74, 68, 56, 12)
+        ctx.fill()
+        roundRect(-60, -R - 88, 120, 26, 10)
+        ctx.fill()
+        const bg = ctx.createRadialGradient(-60, -80, 40, 0, 0, R + 40)
+        bg.addColorStop(0, '#3a3f66')
+        bg.addColorStop(1, '#0b0c20')
+        ctx.shadowColor = col
+        ctx.shadowBlur = 50
+        ctx.fillStyle = bg
+        ctx.beginPath()
+        ctx.arc(0, 0, R + 26, 0, 6.283)
+        ctx.fill()
+        ctx.shadowBlur = 0
+        ctx.lineWidth = 12
+        ctx.strokeStyle = '#d9dde8'
+        ctx.stroke()
+        ctx.lineCap = 'round'
+        for (let i = 0; i < 60; i++) {
+          const a = (i / 60) * 6.283 - Math.PI / 2
+          const big = i % 5 === 0
+          const r0 = R - (big ? 38 : 22)
+          ctx.lineWidth = big ? 7 : 3
+          ctx.strokeStyle = i / 60 < p ? col : 'rgba(255,255,255,0.55)'
+          ctx.beginPath()
+          ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0)
+          ctx.lineTo(Math.cos(a) * (R - 6), Math.sin(a) * (R - 6))
+          ctx.stroke()
+        }
+        ctx.lineWidth = 20
+        ctx.strokeStyle = hexA(col, 0.45)
+        ctx.beginPath()
+        ctx.arc(0, 0, R - 70, -Math.PI / 2, -Math.PI / 2 + p * 6.283)
+        ctx.stroke()
+        bigNumber(String(n), 0, 18, 330 * popIn, col)
+        const ang = -Math.PI / 2 + p * 6.283
+        ctx.strokeStyle = '#ff3b3b'
+        ctx.lineWidth = 9
+        ctx.shadowColor = '#ff3b3b'
+        ctx.shadowBlur = 20
+        ctx.beginPath()
+        ctx.moveTo(-Math.cos(ang) * 46, -Math.sin(ang) * 46)
+        ctx.lineTo(Math.cos(ang) * (R - 12), Math.sin(ang) * (R - 12))
+        ctx.stroke()
+        ctx.fillStyle = '#ff3b3b'
+        ctx.beginPath()
+        ctx.arc(0, 0, 18, 0, 6.283)
+        ctx.fill()
+        ctx.restore()
+        shockwave(cx, cy, p / 0.5, col, 650, 14)
+        break
+      }
+      case 'radar': {
+        ctx.save()
+        ctx.translate(cx, cy)
+        ctx.globalAlpha = fadeOut
+        const R = 290
+        ctx.save()
+        ctx.beginPath()
+        ctx.arc(0, 0, R, 0, 6.283)
+        ctx.clip()
+        ctx.fillStyle = 'rgba(2,22,14,0.9)'
+        ctx.fillRect(-R, -R, R * 2, R * 2)
+        ctx.strokeStyle = 'rgba(80,255,170,0.35)'
+        ctx.lineWidth = 3
+        for (let k = 1; k <= 4; k++) {
+          ctx.beginPath()
+          ctx.arc(0, 0, (R * k) / 4, 0, 6.283)
+          ctx.stroke()
+        }
+        ctx.beginPath()
+        ctx.moveTo(-R, 0)
+        ctx.lineTo(R, 0)
+        ctx.moveTo(0, -R)
+        ctx.lineTo(0, R)
+        ctx.stroke()
+        const sweep = t * 4.2
+        for (let i = 0; i < 26; i++) {
+          ctx.fillStyle = hexA(col, (1 - i / 26) * 0.4)
+          ctx.beginPath()
+          ctx.moveTo(0, 0)
+          ctx.arc(0, 0, R, sweep - (i + 1) * 0.045, sweep - i * 0.045)
+          ctx.closePath()
+          ctx.fill()
+        }
+        for (let i = 0; i < 6; i++) {
+          const a = hash(i + n * 7) * 6.283
+          const d = 60 + hash(i + 40) * (R - 90)
+          const diff = (((sweep - a) % 6.283) + 6.283) % 6.283
+          ctx.fillStyle = hexA('#ffffff', Math.max(0, 1 - diff / 2.4))
+          ctx.beginPath()
+          ctx.arc(Math.cos(a) * d, Math.sin(a) * d, 9, 0, 6.283)
+          ctx.fill()
+        }
+        ctx.restore()
+        ctx.lineWidth = 12
+        ctx.strokeStyle = col
+        ctx.shadowColor = col
+        ctx.shadowBlur = 40
+        ctx.beginPath()
+        ctx.arc(0, 0, R, 0, 6.283)
+        ctx.stroke()
+        ctx.shadowBlur = 0
+        bigNumber(String(n), 0, 14, 300 * popIn, col)
+        ctx.restore()
+        shockwave(cx, cy, p / 0.55, col, 700, 16)
+        break
+      }
+      case 'digital': {
+        ctx.save()
+        ctx.translate(cx, cy)
+        ctx.globalAlpha = fadeOut
+        const pw = 600
+        const ph = 580
+        const sc = 0.88 + 0.12 * popIn
+        ctx.scale(sc, sc)
+        ctx.fillStyle = '#07090f'
+        ctx.shadowColor = col
+        ctx.shadowBlur = 60
+        roundRect(-pw / 2, -ph / 2, pw, ph, 40)
+        ctx.fill()
+        ctx.shadowBlur = 0
+        ctx.lineWidth = 10
+        ctx.strokeStyle = col
+        ctx.stroke()
+        ctx.font = fontOf(52, 'RussoOne')
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillStyle = 'rgba(255,255,255,0.75)'
+        ctx.fillText('T-MINUS', 0, -ph / 2 + 64)
+        if (p < 0.14) {
+          drawSegDigit(n, -14, -10, 330, '#ff2bd6')
+          drawSegDigit(n, 14, -10, 330, '#00f0ff')
+        }
+        drawSegDigit(n, 0, -10, 330, col)
+        ctx.fillStyle = 'rgba(255,255,255,0.12)'
+        roundRect(-230, ph / 2 - 90, 460, 28, 14)
+        ctx.fill()
+        ctx.fillStyle = col
+        ctx.shadowColor = col
+        ctx.shadowBlur = 20
+        roundRect(-230, ph / 2 - 90, Math.max(8, 460 * (1 - p)), 28, 14)
+        ctx.fill()
+        ctx.restore()
+        shockwave(cx, cy, p / 0.5, col, 650, 12)
+        break
+      }
+      case 'hex': {
+        ctx.save()
+        ctx.translate(cx, cy)
+        ctx.globalAlpha = fadeOut
+        const hexPath = (r, rot) => {
+          ctx.beginPath()
+          for (let i = 0; i < 6; i++) {
+            const a = rot + (i * Math.PI) / 3
+            if (i) ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r)
+            else ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r)
+          }
+          ctx.closePath()
+        }
+        ctx.fillStyle = 'rgba(6,4,18,0.82)'
+        hexPath(280, t * 0.8)
+        ctx.fill()
+        ctx.lineWidth = 16
+        ctx.strokeStyle = col
+        ctx.shadowColor = col
+        ctx.shadowBlur = 40
+        ctx.stroke()
+        ctx.shadowBlur = 0
+        ctx.lineWidth = 4
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)'
+        hexPath(225, -t * 0.5)
+        ctx.stroke()
+        for (let i = 0; i < 6; i++) {
+          const a = (i * Math.PI) / 3 + t * 0.8
+          const lit = p > i / 6
+          ctx.save()
+          ctx.translate(Math.cos(a) * 380, Math.sin(a) * 340)
+          ctx.fillStyle = lit ? col : 'rgba(255,255,255,0.12)'
+          ctx.shadowColor = lit ? col : 'transparent'
+          ctx.shadowBlur = 30
+          hexPath(36, 0)
+          ctx.fill()
+          ctx.restore()
+        }
+        bigNumber(String(n), 0, 16, 340 * popIn, col)
+        ctx.restore()
+        shockwave(cx, cy, p / 0.55, col, 700, 16)
+        break
+      }
       default: {
         // slice: số rơi xuống nảy + tia xuyên tâm + 3 chấm tiến độ
         ctx.save()
@@ -693,6 +1081,36 @@
         if (p < 0.35) shockwave(cx, cy + 90, p / 0.35, col, 800, 20)
       }
     }
+  }
+
+  function drawSegDigit(n, x, y, h, col) {
+    const w = h * 0.56
+    const th = h * 0.13
+    const hw = w / 2
+    const hh = h / 2
+    const horiz = (cy2) => [-hw + th * 0.7, cy2 - th / 2, w - th * 1.4, th]
+    const vert = (cx2, y0, y1) => [cx2 - th / 2, y0, th, y1 - y0]
+    const seg = {
+      a: horiz(-hh),
+      d: horiz(hh),
+      g: horiz(0),
+      f: vert(-hw, -hh + th * 0.7, -th * 0.7),
+      b: vert(hw, -hh + th * 0.7, -th * 0.7),
+      e: vert(-hw, th * 0.7, hh - th * 0.7),
+      c: vert(hw, th * 0.7, hh - th * 0.7),
+    }
+    const on = { 1: 'bc', 2: 'abged', 3: 'abgcd' }[n] ?? ''
+    ctx.save()
+    ctx.translate(x, y)
+    for (const [k, r] of Object.entries(seg)) {
+      const lit = on.includes(k)
+      ctx.fillStyle = lit ? col : hexA(col, 0.08)
+      ctx.shadowColor = lit ? col : 'transparent'
+      ctx.shadowBlur = lit ? 36 : 0
+      roundRect(r[0], r[1], r[2], r[3], th / 2.2)
+      ctx.fill()
+    }
+    ctx.restore()
   }
 
   function easeOutBounce(x) {
@@ -851,7 +1269,7 @@
     ctx.fillRect(0, 0, W, 0)
   }
 
-  function renderFrame(t) {
+  function renderIntroFrame(t) {
     ctx.setTransform(scale, 0, 0, scale, 0, 0)
     ctx.clearRect(0, 0, W, H)
     ctx.globalAlpha = 1
@@ -906,9 +1324,9 @@
   }
 
   // ---------- âm thanh ----------
-  async function renderAudio() {
+  function makeAudioKit(seconds) {
     const sr = 48000
-    const dur = TL.end + 0.6
+    const dur = seconds + 0.6
     const oc = new OfflineAudioContext(2, Math.ceil(sr * dur), sr)
     const master = oc.createGain()
     master.gain.value = 0.9
@@ -993,6 +1411,12 @@
       noise(t0, d, vol, 'bandpass', up ? 250 : 5000, up ? 6500 : 250, 2.5, d * 0.7)
     }
 
+    return { oc, master, sr, env, noise, tone, kick, snare, hat, brass, crash, boom, whoosh }
+  }
+
+  async function renderIntroAudio() {
+    const kit = makeAudioKit(TL.end)
+    const { master, tone, noise, kick, snare, hat, brass, crash, boom, whoosh } = kit
     // trống trận suốt phần mở màn (120 bpm)
     for (let b = 0; b < Math.floor(TL.goAt / 0.5); b++) {
       const t0 = b * 0.5
@@ -1041,8 +1465,13 @@
     master.gain.setValueAtTime(0.9, TL.end - 0.35)
     master.gain.linearRampToValueAtTime(0, TL.end)
 
+    return finishAudio(kit, TL.end)
+  }
+
+  async function finishAudio(kit, seconds) {
+    const { oc, sr } = kit
     const buf = await oc.startRendering()
-    const frames = Math.ceil(TL.end * sr)
+    const frames = Math.ceil(seconds * sr)
     const L = buf.getChannelData(0)
     const R = buf.getChannelData(1)
     const bytes = new Uint8Array(44 + frames * 4)
@@ -1069,5 +1498,46 @@
     return btoa(bin)
   }
 
-  window.Intro = { init, renderFrame, renderAudio, TL }
+  const renderFrame = (t) => (mode === 'outro' ? window.IntroOutro.frame(t) : renderIntroFrame(t))
+  const renderAudio = () => (mode === 'outro' ? window.IntroOutro.audio() : renderIntroAudio())
+
+  window.IntroKit = {
+    W,
+    H,
+    clamp,
+    lerp,
+    easeOutCubic,
+    easeOutExpo,
+    easeOutBack,
+    easeInOut,
+    easeOutBounce,
+    hash,
+    mulberry,
+    hexA,
+    fontOf,
+    drawBackground,
+    drawFit,
+    groundShadow,
+    shockwave,
+    bigNumber,
+    roundRect,
+    vignette,
+    drawBolt,
+    makeAudioKit,
+    finishAudio,
+    jpeg: () => canvas.toDataURL('image/jpeg', 0.92).split(',')[1],
+    get ctx() {
+      return ctx
+    },
+    get cfg() {
+      return cfg
+    },
+    get imgs() {
+      return imgs
+    },
+    get scale() {
+      return scale
+    },
+  }
+  window.Intro = { init, renderFrame, renderAudio }
 })()
