@@ -31,13 +31,39 @@ on:
         type: choice
         required: false
         default: random
-        options: [random, clash, inferno, cyber, arena, storm]
+        options: [random, clash, inferno, cyber, arena, storm, frost, toxic, royal, void, sunset]
       intro_countdown:
         description: "Kiểu đồng hồ đếm ngược (chỉ dùng khi bật mở màn)"
         type: choice
         required: false
         default: random
-        options: [random, ring, shock, tile, slice]
+        options: [random, ring, shock, tile, slice, stopwatch, radar, digital, hex]
+      outro:
+        description: "Bật cảnh kết thúc (công bố bên thắng + câu trả lời, thống kê, kêu gọi đăng ký kênh)"
+        type: boolean
+        required: false
+        default: false
+      outro_style:
+        description: "Kiểu công bố bên thắng (chỉ dùng khi bật kết thúc)"
+        type: choice
+        required: false
+        default: random
+        options: [random, trophy, ko, crown, fireworks, suspense, stamp]
+      stats_style:
+        description: "Kiểu bảng thống kê (chỉ dùng khi bật kết thúc)"
+        type: choice
+        required: false
+        default: random
+        options: [random, cards, ticker, gauges, billboard]
+      cta_style:
+        description: "Kiểu kêu gọi đăng ký (chỉ dùng khi bật kết thúc)"
+        type: choice
+        required: false
+        default: random
+        options: [random, button, neon, banner, icons]
+      channel_name:
+        description: "Tên kênh hiển thị ở cảnh kết thúc (để trống = chỉ ghi SUBSCRIBE)"
+        required: false
   schedule:
     - cron: "0 1 * * *"
 
@@ -88,13 +114,23 @@ jobs:
       - name: Dựng video 2K bằng game gốc (thanh máu, chữ, hiệu ứng, âm thanh)
         run: node runner/render.mjs --plan plan.json --out output --width 2560 --height 1440 --fps ${{ inputs.fps || 30 }} --timeout 340
 
-      - name: Dựng mở màn VS và ghép vào đầu video (tùy chọn)
-        # Chạy tay: theo ô "intro". Chạy theo lịch (cron): bật nếu biến repo INTRO_DEFAULT = true.
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.intro) || (github.event_name != 'workflow_dispatch' && vars.INTRO_DEFAULT == 'true') }}
+      - name: Dựng mở màn VS và cảnh kết thúc rồi ghép vào video (tùy chọn)
+        # Chạy tay: theo ô "intro" / "outro". Chạy theo lịch (cron): bật nếu biến repo INTRO_DEFAULT / OUTRO_DEFAULT = true.
+        if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.intro || inputs.outro)) || (github.event_name != 'workflow_dispatch' && (vars.INTRO_DEFAULT == 'true' || vars.OUTRO_DEFAULT == 'true')) }}
         env:
+          INTRO_ON: ${{ github.event_name == 'workflow_dispatch' && (inputs.intro && 'true' || 'false') || (vars.INTRO_DEFAULT == 'true' && 'true' || 'false') }}
+          OUTRO_ON: ${{ github.event_name == 'workflow_dispatch' && (inputs.outro && 'true' || 'false') || (vars.OUTRO_DEFAULT == 'true' && 'true' || 'false') }}
           INTRO_STYLE: ${{ inputs.intro_style || 'random' }}
           INTRO_COUNTDOWN: ${{ inputs.intro_countdown || 'random' }}
-        run: node runner/intro.mjs --plan plan.json --out output --width 2560 --height 1440 --fps ${{ inputs.fps || 30 }} --style "$INTRO_STYLE" --countdown "$INTRO_COUNTDOWN"
+          OUTRO_STYLE: ${{ inputs.outro_style || 'random' }}
+          STATS_STYLE: ${{ inputs.stats_style || 'random' }}
+          CTA_STYLE: ${{ inputs.cta_style || 'random' }}
+          CHANNEL_NAME: ${{ inputs.channel_name || vars.CHANNEL_NAME || '' }}
+        run: >
+          node runner/intro.mjs --plan plan.json --out output --width 2560 --height 1440 --fps ${{ inputs.fps || 30 }}
+          --intro "$INTRO_ON" --outro "$OUTRO_ON"
+          --style "$INTRO_STYLE" --countdown "$INTRO_COUNTDOWN"
+          --outro-style "$OUTRO_STYLE" --stats-style "$STATS_STYLE" --cta-style "$CTA_STYLE"
 
       - name: Tạo SEO bằng DeepSeek và upload YouTube
         id: publish
