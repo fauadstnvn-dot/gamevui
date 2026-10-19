@@ -1249,6 +1249,9 @@
       facingAngle: -0.5,
       runPhase: 0,
       hurtFlash: 0,
+      slowD: 0,
+      jamD: 0,
+      curseD: 0,
     };
   }
   function bn(e) {
@@ -1570,8 +1573,10 @@
       l = r.size[0] * o,
       u = s,
       c = r.kind === "walk" ? P - u / 2 + 10 : i.range(250, P - 190),
-      h = 1 + e.stage * 0.28,
-      m = Math.round((14 + u * 0.12) * h * (t ? 4.2 : 1));
+      h = (1 + e.stage * 0.28) * (1 + Math.min(9, e.player.gun | 0) * (e.director && e.director.scenario.outcome !== "natural" ? 0.12 : 0.3)) * (1 + 0.35 * (e.gvP || 0)),
+      m = Math.round((14 + u * 0.12) * h * (t ? 4.2 : 1)),
+      gvR = i.next(),
+      gvDeb = gvR < Math.min(0.5, 0.15 + e.stage * 0.06 + (e.player.gun | 0) * 0.02 + Math.max(0, e.gvP || 0) * 0.2) ? i.pick(["slow", "jam", "curse"]) : null;
     e.monsters.push({
       uid: e.uid++,
       def: r,
@@ -1591,6 +1596,9 @@
       elite: t,
       flash: 0,
       dmgDone: !1,
+      deb: gvDeb,
+      shield: t ? 3 : e.stage >= 2 && i.next() < 0.3 ? 2 : 0,
+      regen: e.stage >= 3 && i.next() < 0.25,
       coinMin: t ? 14 : 3,
       coinMax: t ? 22 : 7,
     });
@@ -1731,10 +1739,19 @@
       });
     }
   }
+  function a0Hit(e, m) { e.player.invuln <= 0 && gvDebuff(e, m.deb); }
+  function gvDebuff(e, d) {
+    let a = e.player;
+    if (!d || a.haloT > 0) return;
+    let msg = { slow: ["CH\u1EACM!", "SLOWED!", "#7dd3fc", "slowD", 3], jam: ["K\u1EA8T \u0110\u1EA0N!", "JAMMED!", "#ffb02e", "jamD", 4], curse: ["Y\u1EBAU \u0110I!", "CURSED!", "#c084fc", "curseD", 5] }[d];
+    if (!msg) return;
+    a[msg[3]] = msg[4];
+    he(e, T(e.lang, msg[0], msg[1]), a.x, a.y - 200, msg[2], 34, 1);
+  }
   function Me(e, n, t, a = !1) {
     let i = e.player;
     if (e.phase !== "play" || (!a && (i.invuln > 0 || i.haloT > 0))) return;
-    ((e.combo = 0), (e.comboT = 0));
+    ((e.combo = 0), (e.comboT = 0), (e.gvHit = (e.gvHit || 0) + 1));
     let r = e.director,
       s = !!r && r.scenario.outcome !== "natural";
     if (a) n = Math.max(1, Math.round(i.hp));
@@ -1829,6 +1846,14 @@
     e.monsters = e.monsters.filter((a) => a !== n);
   }
   function $e(e, n, t) {
+    if (n.shield > 0) {
+      n.shield--;
+      n.flash = 0.12;
+      n.shieldFx = 0.3;
+      he(e, T(e.lang, "KHI\u00CAN", "SHIELD"), n.x, n.y - n.h * 0.6, "#7dd3fc", 26, 0.7);
+      return;
+    }
+    t = Math.min(t, Math.max(8, Math.ceil(n.maxHp * (n.elite ? 0.25 : 0.45))));
     ((n.hp -= t),
       (n.flash = 0.12),
       gt(e, t, n.x, n.y - n.h * 0.5),
@@ -1923,7 +1948,7 @@
         break;
       }
       case "gun": {
-        let i = Math.max(t.gun, n.gunIdx);
+        let i = Math.min(Math.max(t.gun, n.gunIdx), Math.max(t.gun, 3 + Math.floor(e.stage * 1.5)));
         (i > t.gun
           ? ((t.gun = i),
             H(
@@ -2144,6 +2169,7 @@
                 : 56,
       d = (f, p, w, b, x, $, I) =>
         e.fireballs.push({
+          deb: a > 0.25 && s.chance(0.35) ? s.pick(["slow", "jam", "curse"]) : null,
           x: f,
           y: p,
           vx: w,
@@ -2699,8 +2725,16 @@
           e.tick % 5 === 0 &&
           Ae(e, void 0, !1, (e.tick % 15) * 40)),
       (e.monsterT -= t));
-    let r = Math.min(1, e.time / 40),
-      s = 3 + Math.round(7 * r);
+    e.gvHit = (e.gvHit || 0) * Math.exp(-t / 15);
+    {
+      let gvD = e.player.hp / e.player.maxHp - e.gvHit * 0.3,
+        gvT = Math.max(-0.5, Math.min(1, (gvD - 0.45) * 2.5));
+      e.gvP = (e.gvP || 0) + (gvT - (e.gvP || 0)) * Math.min(1, t * 0.3);
+    }
+    e.director && e.director.scenario.outcome !== "natural" && (e.gvP = 0);
+    let gvP = e.gvP || 0,
+      r = Math.min(1, e.time / 40),
+      s = 3 + Math.round(7 * r) + Math.floor((e.player.gun | 0) / 2) + Math.round(gvP * 3);
     if (
       e.monsterT <= 0 &&
       e.monsters.length < (e.swarmT > 0 ? 22 : s) &&
@@ -2711,7 +2745,7 @@
         Ae(e, void 0, !1, S * 170);
       e.monsterT =
         (e.rng.range(2.2, 3.6) * (1 + (1 - r) * 0.9)) /
-        ((1 + e.stage * 0.1) * i);
+        ((1 + e.stage * 0.1 + (e.player.gun | 0) * 0.06 + gvP * 0.5) * i);
     }
     ((e.platformT -= t),
       e.platformT <= 0 && (Tn(e), (e.platformT = e.rng.range(7, 13))),
@@ -2729,7 +2763,7 @@
     ((e.bestScore = Math.max(e.bestScore, e.score)),
       e.run++,
       (e.player = R(L({}, mt()), {
-        gun: Math.max(0, e.player.gun - 2),
+        gun: Math.max(0, e.player.gun - 3),
         invuln: 2.5,
         haloT: 3,
       })),
@@ -2790,6 +2824,8 @@
     gvSync(e);
     if (
       ((a.fireCd -= t),
+      (a.jamD = Math.max(0, a.jamD - t)),
+      (a.curseD = Math.max(0, a.curseD - t)),
       (a.doubleT = Math.max(0, a.doubleT - t)),
       !n.fire || !n.aim || a.fireCd > 0)
     )
@@ -2797,7 +2833,7 @@
     let i = we(a),
       r = Math.atan2(n.aim.y - i.y, n.aim.x - i.x);
     ((r = Math.max(-1.35, Math.min(0.5, r))), (a.facingAngle = r));
-    let F = gvF(a), s = Math.max(1, Math.round(vn(a.gun) * F.d));
+    let F = gvF(a), s = Math.max(1, Math.round(vn(a.gun) * F.d * (a.curseD > 0 ? 0.6 : 1)));
     N(e, "shoot");
     let o = (l, u = 0) => {
       e.bullets.push({
@@ -2818,7 +2854,7 @@
     };
     (o(r),
       a.doubleT > 0 && (o(r - 0.09, -8), o(r + 0.09, 8)),
-      (F.pairs >= 1 && (o(r - 0.08, -6), o(r + 0.08, 6)), F.pairs >= 2 && (o(r - 0.16, -12), o(r + 0.16, 12)), (a.fireCd = Sn(a.gun) * F.c)));
+      (F.pairs >= 1 && (o(r - 0.08, -6), o(r + 0.08, 6)), F.pairs >= 2 && (o(r - 0.16, -12), o(r + 0.16, 12)), (a.fireCd = Sn(a.gun) * F.c * (a.jamD > 0 ? 1.7 : 1))));
   }
   function ft(e, n, t) {
     let a = e.player;
@@ -2827,7 +2863,8 @@
       (a.reverseT = Math.max(0, a.reverseT - t)),
       (a.hurtFlash = Math.max(0, a.hurtFlash - t)),
       (a.meteorT = Math.max(0, a.meteorT - t)));
-    let r = ((n.right ? 1 : 0) - (n.left ? 1 : 0)) * Ue;
+    a.slowD = Math.max(0, a.slowD - t);
+    let r = ((n.right ? 1 : 0) - (n.left ? 1 : 0)) * Ue * (a.slowD > 0 ? 0.55 : 1);
     if (
       ((a.vx += (r - a.vx) * Math.min(1, t * 10)),
       (a.x += a.vx * t),
@@ -2927,7 +2964,7 @@
       s = a.x,
       o = a.y - 70,
       l = (g) =>
-        e.fireballs.push(L({ reflected: !1, age: 0, kind: "fire" }, g));
+        e.fireballs.push(L({ reflected: !1, age: 0, kind: "fire", deb: n.deb }, g));
     if (!t) {
       if (n.def.kind === "fly")
         for (let g = -1; g <= 1; g++) {
@@ -3081,7 +3118,7 @@
     let t = e.player,
       a = e.speed;
     for (let o of e.monsters.slice()) {
-      ((o.age += n), (o.flash = Math.max(0, o.flash - n)), (o.cooldown -= n));
+      ((o.age += n), (o.flash = Math.max(0, o.flash - n)), (o.cooldown -= n), (o.shieldFx = Math.max(0, (o.shieldFx || 0) - n)), o.regen && o.hp < o.maxHp && (o.hp = Math.min(o.maxHp, o.hp + o.maxHp * 0.04 * n)));
       let l = t.x - o.x;
       if (o.state === "attack") {
         if (((o.stateT -= n), wt[o.def.id])) o.x -= (a * 0.6 + o.ownVx) * n;
@@ -3233,7 +3270,7 @@
     for (let s of e.bullets.slice()) {
       let o = !1;
       for (let l of e.monsters.slice()) {
-        if (s.hitIds.includes(l.uid)) continue;
+        if (s.hitIds.includes(l.uid) || l.x > M - 30) continue;
         let u = Ee(l);
         if (s.x > u.x && s.x < u.x + u.w && s.y > u.y && s.y < u.y + u.h)
           if (
@@ -3278,6 +3315,7 @@
         (s.state !== "attack" && s.def.kind === "fly" && s.state, Mn(a, Ee(s)))
       ) {
         let o = s.elite ? 20 : 12;
+        a0Hit(e, s);
         Me(e, o, s.def.id);
       }
     for (let s of e.bolts)
@@ -3343,6 +3381,7 @@
               s.shape,
             ),
             (e.fireballs = e.fireballs.filter((l) => l !== s)),
+            gvDebuff(e, s.deb),
             Me(
               e,
               (r = s.dmg) != null ? r : 16,
@@ -4231,6 +4270,37 @@
         e.fill(),
         e.restore());
     }
+    if (t.shield > 0) {
+      let gvK = (t.shieldFx || 0) / 0.3,
+        gvR = Math.max(t.h * 0.62, 46) * (1 + gvK * 0.12),
+        gvY = t.y + t.h / 2 - 8,
+        gvPulse = 0.5 + 0.5 * Math.sin((t.age || 0) * 5),
+        gvG = e.createRadialGradient(t.x, gvY, gvR * 0.55, t.x, gvY, gvR);
+      (e.save(),
+        gvG.addColorStop(0, "rgba(125,211,252,0)"),
+        gvG.addColorStop(0.75, `rgba(125,211,252,${0.12 + gvK * 0.3})`),
+        gvG.addColorStop(1, `rgba(186,230,253,${0.35 + gvK * 0.4})`),
+        (e.fillStyle = gvG),
+        e.beginPath(),
+        e.arc(t.x, gvY, gvR, 0, Math.PI * 2),
+        e.fill(),
+        (e.strokeStyle = `rgba(224,242,254,${0.55 + gvPulse * 0.25 + gvK * 0.2})`),
+        (e.lineWidth = 2.5 + gvK * 3),
+        (e.shadowColor = "#7dd3fc"),
+        (e.shadowBlur = 14 + gvK * 20),
+        e.beginPath(),
+        e.arc(t.x, gvY, gvR, 0, Math.PI * 2),
+        e.stroke(),
+        (e.shadowBlur = 0),
+        (e.fillStyle = "rgba(224,242,254,0.95)"));
+      for (let gvI = 0; gvI < t.shield; gvI++) {
+        let gvA = (gvI / Math.max(1, t.shield)) * Math.PI * 2 + (t.age || 0) * 1.6;
+        (e.beginPath(),
+          e.arc(t.x + Math.cos(gvA) * gvR, gvY + Math.sin(gvA) * gvR, 5, 0, Math.PI * 2),
+          e.fill());
+      }
+      e.restore();
+    }
     let f = (b, x, $, I, B) => {
         (e.save(),
           e.translate(t.x + b, t.y + t.h / 2 - 8),
@@ -4415,6 +4485,56 @@
         e.ellipse(a.x, a.y - 90, 150, 105, 0, 0, Math.PI * 2),
         e.stroke(),
         e.restore());
+    }
+    {
+      let gvT = t.time,
+        gvCx = a.x,
+        gvCy = a.y - 90;
+      if (a.slowD > 0) {
+        let gvF = Math.min(1, a.slowD);
+        (e.save(),
+          (e.globalAlpha = 0.9 * gvF),
+          (e.strokeStyle = "#bae6fd"),
+          (e.fillStyle = "rgba(125,211,252,0.18)"),
+          (e.lineWidth = 3),
+          (e.shadowColor = "#7dd3fc"),
+          (e.shadowBlur = 16),
+          e.beginPath(),
+          e.ellipse(gvCx, gvCy, 120, 150, 0, 0, Math.PI * 2),
+          e.fill(),
+          e.stroke());
+        for (let gvI = 0; gvI < 6; gvI++) {
+          let gvA = (gvI / 6) * Math.PI * 2 + gvT * 0.8,
+            gvX = gvCx + Math.cos(gvA) * 120,
+            gvY = gvCy + Math.sin(gvA) * 150;
+          (e.beginPath(), e.moveTo(gvX, gvY - 14), e.lineTo(gvX + 8, gvY), e.lineTo(gvX, gvY + 14), e.lineTo(gvX - 8, gvY), e.closePath(), (e.fillStyle = "#e0f2fe"), e.fill());
+        }
+        e.restore();
+      }
+      if (a.jamD > 0) {
+        let gvF = Math.min(1, a.jamD);
+        (e.save(), (e.globalAlpha = gvF), (e.strokeStyle = "#fde047"), (e.lineWidth = 3), (e.shadowColor = "#f59e0b"), (e.shadowBlur = 10));
+        let gvG = we(a);
+        for (let gvI = 0; gvI < 5; gvI++) {
+          let gvX = gvG.x + Math.sin(gvT * 31 + gvI * 7) * 30,
+            gvY = gvG.y + Math.cos(gvT * 27 + gvI * 5) * 30;
+          (e.beginPath(), e.moveTo(gvX, gvY), e.lineTo(gvX + 10 * Math.sin(gvT * 40 + gvI), gvY - 12), e.lineTo(gvX - 6, gvY - 22), e.stroke());
+        }
+        ((e.fillStyle = "rgba(60,60,60,0.5)"), e.beginPath(), e.arc(gvG.x, gvG.y - 28 - ((gvT * 40) % 20), 9, 0, Math.PI * 2), e.fill(), e.restore());
+      }
+      if (a.curseD > 0) {
+        let gvF = Math.min(1, a.curseD);
+        (e.save(), (e.globalAlpha = 0.85 * gvF), (e.shadowColor = "#a855f7"), (e.shadowBlur = 18), (e.strokeStyle = "#c084fc"), (e.lineWidth = 3));
+        for (let gvI = 0; gvI < 2; gvI++) {
+          (e.beginPath(), e.ellipse(gvCx, gvCy + 30 - gvI * 40, 90 + gvI * 20, 24, 0, 0, Math.PI * 2), e.stroke());
+        }
+        for (let gvI = 0; gvI < 8; gvI++) {
+          let gvY = gvCy + 110 - (((gvT * 70 + gvI * 38) % 260)),
+            gvX = gvCx + Math.sin(gvT * 3 + gvI * 2.1) * 70;
+          ((e.fillStyle = "rgba(192,132,252,0.9)"), e.beginPath(), e.moveTo(gvX, gvY - 8), e.lineTo(gvX + 5, gvY + 4), e.lineTo(gvX - 5, gvY + 4), e.closePath(), e.fill());
+        }
+        e.restore();
+      }
     }
     a.reverseT > 0 &&
       (e.save(),
@@ -5063,6 +5183,9 @@
         ]),
       i.haloT > 0 &&
         u.push([T(t.lang, "B\u1EA4T T\u1EEC", "IMMORTAL"), i.haloT, "#fde68a"]),
+      i.slowD > 0 && u.push([T(t.lang, "CH\u1EACM", "SLOWED"), i.slowD, "#7dd3fc"]),
+      i.jamD > 0 && u.push([T(t.lang, "K\u1EA8T \u0110\u1EA0N", "JAMMED"), i.jamD, "#fde047"]),
+      i.curseD > 0 && u.push([T(t.lang, "Y\u1EBAU \u0110I", "CURSED"), i.curseD, "#c084fc"]),
       i.reverseT > 0 &&
         u.push([
           T(t.lang, "PH\u1EA2N \u0110\xD2N", "COUNTER"),
