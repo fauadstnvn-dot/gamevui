@@ -1,10 +1,14 @@
-// Dựng đoạn mở màn "VS" (thú cưỡi vs boss + quái, câu hỏi, đếm ngược, READY/GO, âm thanh) rồi ghép lên đầu video đã dựng.
-// Dùng:  node runner/intro.mjs --plan plan.json --out output --width 2560 --height 1440 --fps 30 [--style random] [--countdown random]
+// Dựng đoạn mở màn "VS" (thú cưỡi vs boss + quái, câu hỏi, đếm ngược, READY/GO) và cảnh kết thúc (bên thắng + câu trả lời,
+// thống kê, kêu gọi đăng ký) rồi ghép vào đầu/cuối video đã dựng.
+// Dùng:  node runner/intro.mjs --plan plan.json --out output --width 2560 --height 1440 --fps 30
+//          [--intro true|false] [--outro true|false] [--style random] [--countdown random]
+//          [--outro-style random] [--stats-style random] [--cta-style random] [--winner auto|mount|boss|draw] [--channel "TÊN KÊNH"]
 import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { COUNTDOWNS, CTA_KINDS, DRAW_ANSWERS, GO, OUTRO_KINDS, QUESTIONS, READY, STATS_KINDS, STYLES, SUBTITLES, fill } from './intro/content.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const appDir = path.resolve(here, '..', 'app')
@@ -23,28 +27,10 @@ const height = Number(args.height ?? 1440)
 const fps = Number(args.fps ?? 30)
 const crf = Number(args.crf ?? 20)
 const preset = args.preset ?? 'veryfast'
+const wantIntro = args.intro !== 'false'
+const wantOutro = args.outro === 'true'
 const work = path.resolve('.work')
 fs.mkdirSync(work, { recursive: true })
-
-const STYLES = ['clash', 'inferno', 'cyber', 'arena', 'storm']
-const COUNTDOWNS = ['ring', 'shock', 'tile', 'slice']
-const QUESTIONS = [
-  'WHO WILL WIN?',
-  'WHO WILL SURVIVE?',
-  'WHO RULES THE ARENA?',
-  'CAN THE MOUNT BEAT THE BOSS?',
-  'HEROES OR MONSTERS?',
-  'WHO IS STRONGER?',
-  'WHO FALLS FIRST?',
-  'ONLY ONE WALKS AWAY...',
-  'WHO WILL TAKE THE VICTORY?',
-  'BEAST OR BOSS: PICK YOUR SIDE!',
-  'CAN THE BOSS BE STOPPED?',
-  'WHO WILL BE LEFT STANDING?',
-]
-const SUBTITLES = ['COMMENT YOUR PICK BELOW', 'TEAM LEFT OR TEAM RIGHT?', 'MAKE YOUR PREDICTION NOW', 'WATCH TO THE END TO FIND OUT']
-const READY = ['READY?', 'GET READY!', 'ARE YOU READY?', 'BRACE YOURSELF!', 'FIGHT STARTS NOW!']
-const GO = ['FIGHT!', 'GO!', 'BEGIN!', 'BATTLE START!']
 
 function mulberry(seed) {
   return () => {
@@ -56,18 +42,33 @@ function mulberry(seed) {
   }
 }
 const rnd = mulberry((Number(plan.seed) || 1) ^ 0x51ed)
-const pick = (arr, forced, fallbackList) => (forced && forced !== 'random' && fallbackList.includes(forced) ? forced : arr[Math.floor(rnd() * arr.length)])
-
-const style = pick(STYLES, args.style, STYLES)
-const countdown = pick(COUNTDOWNS, args.countdown, COUNTDOWNS)
-const question = pick(QUESTIONS, null, [])
-const subtitle = pick(SUBTITLES, null, [])
-const readyText = pick(READY, null, [])
-const goText = pick(GO, null, [])
+const pick = (arr, forced, allowed) => (forced && forced !== 'random' && allowed.includes(forced) ? forced : arr[Math.floor(rnd() * arr.length)])
 
 const stem = (n) => String(n).replace(/\.zip$/i, '')
 const pretty = (id) => stem(id).replace(/[-_]+/g, ' ').replace(/\d+$/, '').trim().toUpperCase()
 
+// Thứ tự bốc thăm giữ nguyên như trước để cùng seed vẫn ra cùng mở màn.
+const style = pick(STYLES, args.style, STYLES)
+const countdown = pick(COUNTDOWNS, args.countdown, COUNTDOWNS)
+const questionEntry = pick(QUESTIONS, null, [])
+const subtitle = pick(SUBTITLES, null, [])
+const readyText = pick(READY, null, [])
+const goText = pick(GO, null, [])
+
+// ---------- kết quả trận (từ file thông tin do bước dựng game ghi) ----------
+const mainsBefore = fs.readdirSync(outDir).filter((f) => f.endsWith('.mp4')).sort()
+if (!mainsBefore.length) throw new Error('Không thấy video chính trong thư mục output để ghép mở màn / kết thúc')
+const mainFile = path.join(outDir, mainsBefore.at(-1))
+const metaFile = mainFile.replace(/\.mp4$/, '.json')
+const meta = fs.existsSync(metaFile) ? JSON.parse(fs.readFileSync(metaFile, 'utf8')) : null
+
+const names = { M: pretty(plan.mount), B: pretty(plan.boss) }
+let winner = ['mount', 'boss', 'draw'].includes(args.winner) ? args.winner : null
+if (!winner) winner = meta?.result === 'lose' ? 'boss' : meta?.result === 'timeup' ? 'draw' : 'mount'
+const tokens = { ...names, W: winner === 'boss' ? names.B : names.M, L: winner === 'boss' ? names.M : names.B }
+const question = fill(questionEntry.q, tokens)
+
+// ---------- ảnh nhân vật ----------
 const manifest = JSON.parse(fs.readFileSync(path.join(gameDir, 'manifest.json'), 'utf8'))
 const toDataUrl = (rel) => {
   if (!rel) return null
@@ -82,10 +83,9 @@ const monsterRels = (plan.monsters ?? [])
   .map((m) => manifest.monsters?.find((e) => e.id === stem(m))?.frames?.[0])
   .filter(Boolean)
   .slice(0, 3)
-
 const fontUrl = (name) => `data:font/ttf;base64,${fs.readFileSync(path.join(appDir, 'assets', 'fonts', name)).toString('base64')}`
 
-const cfg = {
+const baseCfg = {
   seed: Number(plan.seed) || 1,
   width,
   height,
@@ -96,36 +96,70 @@ const cfg = {
   subtitle,
   readyText,
   goText,
-  labels: { left: pretty(plan.mount), right: `${pretty(plan.boss)} & MONSTERS` },
+  labels: { left: names.M, right: `${names.B} & MONSTERS` },
   mountImg: toDataUrl(mountEntry?.idle ?? mountEntry?.run?.[0]),
   bossImg: toDataUrl(bossRel),
   monsterImgs: monsterRels.map(toDataUrl),
   fonts: { anton: fontUrl('Anton-Regular.ttf'), bebas: fontUrl('BebasNeue-Regular.ttf'), russo: fontUrl('RussoOne-Regular.ttf') },
 }
+if (!baseCfg.mountImg || !baseCfg.bossImg) console.log('  ! thiếu ảnh thú cưỡi hoặc boss, mở màn / kết thúc sẽ thiếu nhân vật')
 
-console.log(`Mở màn: kiểu ${style}, đồng hồ ${countdown}, câu hỏi "${question}", "${readyText}" -> "${goText}"`)
-if (!cfg.mountImg || !cfg.bossImg) console.log('  ! thiếu ảnh thú cưỡi hoặc boss, mở màn sẽ thiếu nhân vật')
-
-const frameDir = path.join(work, 'intro_frames')
-fs.rmSync(frameDir, { recursive: true, force: true })
-fs.mkdirSync(frameDir, { recursive: true })
-const wavPath = path.join(work, 'intro.wav')
-const introMp4 = path.join(work, 'intro.mp4')
-
-const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage', '--ignore-gpu-blocklist'] })
-const page = await browser.newPage({ viewport: { width: 800, height: 600 } })
-page.on('pageerror', (e) => console.log('[intro page error]', e.message))
-await page.setContent('<!doctype html><html><body></body></html>')
-await page.addScriptTag({ path: path.join(here, 'intro', 'intro-page.js') })
-const { frames } = await page.evaluate((c) => window.Intro.init(c), cfg)
-
-for (let i = 0; i < frames; i++) {
-  const b64 = await page.evaluate((t) => window.Intro.renderFrame(t), i / fps)
-  fs.writeFileSync(path.join(frameDir, `f${String(i).padStart(6, '0')}.jpg`), Buffer.from(b64, 'base64'))
-  if (i % 60 === 0) console.log(`  khung mở màn ${i}/${frames}`)
+// ---------- nội dung cảnh kết thúc ----------
+function buildStats(kind) {
+  const s = meta?.stats
+  const pool = []
+  const add = (id, label, value, fmt, note) => {
+    if (Number.isFinite(value) && value > 0 && !pool.some((p) => p.id === id)) pool.push({ id, label, value: Math.round(value), fmt, note })
+  }
+  if (s) {
+    add('kills', 'MONSTERS SLAIN', s.kills, 'int', 'IN ONE EPIC BATTLE')
+    add('boss', `${names.B} DEFEATED`, s.sunKills, 'int', 'TIMES THE BOSS WENT DOWN')
+    add('score', 'FINAL SCORE', s.score, 'int', 'POINTS EARNED')
+    add('coins', 'COINS COLLECTED', s.coins, 'int', 'SHINY COINS')
+    add('time', 'BATTLE TIME', s.time, 'time', 'OF NON-STOP ACTION')
+    if (s.stages > 1) add('stage', 'STAGES REACHED', Math.min(s.stage + 1, s.stages), 'int', `OUT OF ${s.stages}`)
+    if (s.kills > 0 && s.time >= 20) add('kpm', 'KILLS PER MINUTE', s.kills / (s.time / 60), 'int', 'NON-STOP CARNAGE')
+  }
+  add('time', 'BATTLE TIME', Number(plan.duration), 'time', 'OF NON-STOP ACTION')
+  add('types', 'MONSTER TYPES', plan.monsters?.length, 'int', 'FACED IN THIS BATTLE')
+  const want = kind === 'ticker' ? 4 : 3
+  const shuffled = [...pool]
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1))
+    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+  }
+  const chosen = shuffled.slice(0, want)
+  return pool.filter((p) => chosen.includes(p))
 }
-fs.writeFileSync(wavPath, Buffer.from(await page.evaluate(() => window.Intro.renderAudio()), 'base64'))
-await browser.close()
+
+const channelRaw = String(args.channel ?? process.env.CHANNEL_NAME ?? '').trim()
+const channel = channelRaw && channelRaw !== 'true' ? channelRaw.toUpperCase() : ''
+const drawKinds = ['stamp', 'suspense', 'ko']
+let outroKind = pick(winner === 'draw' ? drawKinds : OUTRO_KINDS, args['outro-style'], OUTRO_KINDS)
+if (winner === 'draw' && !drawKinds.includes(outroKind)) outroKind = 'stamp'
+const statsKind = pick(STATS_KINDS, args['stats-style'], STATS_KINDS)
+const ctaKind = pick(CTA_KINDS, args['cta-style'], CTA_KINDS)
+const statsTitle = pick(['BATTLE STATS', 'MATCH REPORT', 'BY THE NUMBERS', 'FIGHT RECAP'], null, [])
+const answerTpl = winner === 'draw' ? pick(DRAW_ANSWERS, null, []) : (winner === 'mount' ? questionEntry.win : questionEntry.lose) ?? questionEntry.a
+const outro = {
+  kind: outroKind,
+  statsKind,
+  ctaKind,
+  winner,
+  question,
+  answer: winner === 'draw' ? answerTpl : fill(answerTpl, tokens),
+  statsTitle,
+  stats: buildStats(statsKind),
+  channel,
+}
+
+const ffmpeg = process.env.FFMPEG ?? 'ffmpeg'
+const vf = `scale=${width}:${height}:flags=lanczos:in_range=pc:out_range=tv:in_color_matrix=bt601:out_color_matrix=bt709,format=yuv420p`
+const encodeArgs = [
+  '-c:v', 'libx264', '-preset', preset, '-crf', String(crf), '-profile:v', 'high', '-level', '5.2',
+  '-pix_fmt', 'yuv420p', '-color_range', 'tv', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
+  '-g', String(fps * 2),
+]
 
 function run(cmd, a) {
   return new Promise((resolve, reject) => {
@@ -135,26 +169,54 @@ function run(cmd, a) {
     p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`${cmd} lỗi ${code}\n${err.slice(-1500)}`))))
   })
 }
-const ffmpeg = process.env.FFMPEG ?? 'ffmpeg'
-const vf = `scale=${width}:${height}:flags=lanczos:in_range=pc:out_range=tv:in_color_matrix=bt601:out_color_matrix=bt709,format=yuv420p`
-const encodeArgs = [
-  '-c:v', 'libx264', '-preset', preset, '-crf', String(crf), '-profile:v', 'high', '-level', '5.2',
-  '-pix_fmt', 'yuv420p', '-color_range', 'tv', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
-  '-g', String(fps * 2),
-]
-await run(ffmpeg, [
-  '-y', '-hide_banner', '-nostdin', '-loglevel', 'error',
-  '-framerate', String(fps), '-i', path.join(frameDir, 'f%06d.jpg'), '-i', wavPath,
-  '-vf', vf, '-r', String(fps), ...encodeArgs,
-  '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2', '-shortest', '-movflags', '+faststart', introMp4,
-])
-fs.rmSync(frameDir, { recursive: true, force: true })
-fs.rmSync(wavPath, { force: true })
 
-// Ghép intro + video chính (giữ nguyên tên file để bước upload không phải đổi gì).
-const mains = fs.readdirSync(outDir).filter((f) => f.endsWith('.mp4')).sort()
-if (!mains.length) throw new Error('Không thấy video chính trong thư mục output để ghép mở màn')
-const mainFile = path.join(outDir, mains.at(-1))
+// Dựng một đoạn (mở màn hoặc kết thúc) thành file mp4 có tiếng.
+async function renderSegment(mode, outMp4) {
+  const frameDir = path.join(work, `${mode}_frames`)
+  const wavPath = path.join(work, `${mode}.wav`)
+  fs.rmSync(frameDir, { recursive: true, force: true })
+  fs.mkdirSync(frameDir, { recursive: true })
+  const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage', '--ignore-gpu-blocklist'] })
+  const page = await browser.newPage({ viewport: { width: 800, height: 600 } })
+  page.on('pageerror', (e) => console.log(`[${mode} page error]`, e.message))
+  await page.setContent('<!doctype html><html><body></body></html>')
+  await page.addScriptTag({ path: path.join(here, 'intro', 'intro-page.js') })
+  await page.addScriptTag({ path: path.join(here, 'intro', 'outro-page.js') })
+  const { frames, duration } = await page.evaluate((c) => window.Intro.init(c), { ...baseCfg, mode, outro })
+  for (let i = 0; i < frames; i++) {
+    const b64 = await page.evaluate((t) => window.Intro.renderFrame(t), i / fps)
+    fs.writeFileSync(path.join(frameDir, `f${String(i).padStart(6, '0')}.jpg`), Buffer.from(b64, 'base64'))
+    if (i % 60 === 0) console.log(`  khung ${mode} ${i}/${frames}`)
+  }
+  fs.writeFileSync(wavPath, Buffer.from(await page.evaluate(() => window.Intro.renderAudio()), 'base64'))
+  await browser.close()
+  await run(ffmpeg, [
+    '-y', '-hide_banner', '-nostdin', '-loglevel', 'error',
+    '-framerate', String(fps), '-i', path.join(frameDir, 'f%06d.jpg'), '-i', wavPath,
+    '-vf', vf, '-r', String(fps), ...encodeArgs,
+    '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2', '-shortest', '-movflags', '+faststart', outMp4,
+  ])
+  fs.rmSync(frameDir, { recursive: true, force: true })
+  fs.rmSync(wavPath, { force: true })
+  return duration
+}
+
+const introMp4 = path.join(work, 'intro.mp4')
+const outroMp4 = path.join(work, 'outro.mp4')
+let introSeconds = 0
+let outroSeconds = 0
+
+if (wantIntro) {
+  console.log(`Mở màn: kiểu ${style}, đồng hồ ${countdown}, câu hỏi "${question}", "${readyText}" -> "${goText}"`)
+  introSeconds = await renderSegment('intro', introMp4)
+}
+if (wantOutro) {
+  console.log(`Kết thúc: kiểu ${outroKind}, thống kê ${statsKind}, kêu gọi ${ctaKind}, bên thắng ${winner}, trả lời "${outro.answer}"${meta?.stats ? '' : ' (không có thống kê thật, dùng thông tin kế hoạch)'}`)
+  outroSeconds = await renderSegment('outro', outroMp4)
+}
+
+// ---------- ghép: [mở màn] + video chính + [kết thúc] ----------
+const parts = [wantIntro && introMp4, mainFile, wantOutro && outroMp4].filter(Boolean)
 const merged = path.join(work, 'merged.mp4')
 const probe = spawnSync(process.env.FFPROBE ?? 'ffprobe', ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=codec_name', '-of', 'csv=p=0', mainFile], { encoding: 'utf8' })
 const mainHasAudio = probe.status === 0 && probe.stdout.trim() !== ''
@@ -162,7 +224,7 @@ const mainHasAudio = probe.status === 0 && probe.stdout.trim() !== ''
 let ok = false
 if (mainHasAudio) {
   const list = path.join(work, 'concat.txt')
-  fs.writeFileSync(list, `file '${introMp4.replace(/'/g, "'\\''")}'\nfile '${mainFile.replace(/'/g, "'\\''")}'\n`)
+  fs.writeFileSync(list, parts.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n') + '\n')
   try {
     await run(ffmpeg, ['-y', '-hide_banner', '-nostdin', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', '-movflags', '+faststart', merged])
     ok = true
@@ -171,30 +233,35 @@ if (mainHasAudio) {
   }
 }
 if (!ok) {
-  const norm = `[1:v]scale=${width}:${height}:flags=lanczos,fps=${fps},setsar=1,format=yuv420p[v1];[0:v]setsar=1[v0]`
-  const common = ['-y', '-hide_banner', '-nostdin', '-loglevel', 'error', '-i', introMp4, '-i', mainFile]
+  const inputs = parts.flatMap((p) => ['-i', p])
+  const norm = parts.map((_, i) => `[${i}:v]scale=${width}:${height}:flags=lanczos,fps=${fps},setsar=1,format=yuv420p[v${i}]`).join(';')
   if (mainHasAudio) {
+    const an = parts.map((_, i) => `[${i}:a]aresample=48000,aformat=channel_layouts=stereo[a${i}]`).join(';')
+    const seq = parts.map((_, i) => `[v${i}][a${i}]`).join('')
     await run(ffmpeg, [
-      ...common,
-      '-filter_complex', `${norm};[1:a]aresample=48000,aformat=channel_layouts=stereo[a1];[v0][0:a][v1][a1]concat=n=2:v=1:a=1[v][a]`,
+      '-y', '-hide_banner', '-nostdin', '-loglevel', 'error', ...inputs,
+      '-filter_complex', `${norm};${an};${seq}concat=n=${parts.length}:v=1:a=1[v][a]`,
       '-map', '[v]', '-map', '[a]', ...encodeArgs, '-r', String(fps),
       '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-movflags', '+faststart', merged,
     ])
   } else {
+    const seq = parts.map((_, i) => `[v${i}]`).join('')
     await run(ffmpeg, [
-      ...common,
-      '-filter_complex', `${norm};[v0][v1]concat=n=2:v=1:a=0[v]`,
+      '-y', '-hide_banner', '-nostdin', '-loglevel', 'error', ...inputs,
+      '-filter_complex', `${norm};${seq}concat=n=${parts.length}:v=1:a=0[v]`,
       '-map', '[v]', ...encodeArgs, '-r', String(fps), '-an', '-movflags', '+faststart', merged,
     ])
   }
 }
 fs.renameSync(merged, mainFile)
 fs.rmSync(introMp4, { force: true })
+fs.rmSync(outroMp4, { force: true })
 
-const metaFile = mainFile.replace(/\.mp4$/, '.json')
-if (fs.existsSync(metaFile)) {
-  const meta = JSON.parse(fs.readFileSync(metaFile, 'utf8'))
-  meta.intro = { style, countdown, question, ready: readyText, go: goText }
+if (meta) {
+  meta.baseDuration = meta.baseDuration ?? meta.duration
+  meta.duration = Math.round(meta.baseDuration + introSeconds + outroSeconds)
+  if (wantIntro) meta.intro = { style, countdown, question, ready: readyText, go: goText, seconds: introSeconds }
+  if (wantOutro) meta.outro = { kind: outroKind, stats: statsKind, cta: ctaKind, winner, answer: outro.answer, channel: channel || null, seconds: outroSeconds }
   fs.writeFileSync(metaFile, JSON.stringify(meta, null, 2))
 }
-console.log(`Đã ghép mở màn vào ${path.basename(mainFile)} (${(fs.statSync(mainFile).size / 1e6).toFixed(1)} MB)`)
+console.log(`Đã ghép ${[wantIntro && 'mở màn', wantOutro && 'kết thúc'].filter(Boolean).join(' + ')} vào ${path.basename(mainFile)} (${(fs.statSync(mainFile).size / 1e6).toFixed(1)} MB)`)
