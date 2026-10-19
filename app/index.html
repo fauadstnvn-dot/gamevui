@@ -33,6 +33,17 @@
         </div>
       </div>
 
+      <div class="row"><label for="weapon">Vũ khí (phím 1-5, 6 = đổi theo màn, 7 = ngẫu nhiên mỗi video)</label>
+        <select id="weapon">
+          <option value="-2" selected>7 · Ngẫu nhiên mỗi video</option>
+          <option value="0">1 · Súng nước</option>
+          <option value="1">2 · Plasma</option>
+          <option value="2">3 · Lửa</option>
+          <option value="3">4 · Sét</option>
+          <option value="4">5 · Hư Không</option>
+          <option value="-1">6 · Tự đổi theo màn</option>
+        </select></div>
+
       <div class="grid2">
         <div class="row"><label for="mode">Chế độ</label>
           <select id="mode"><option value="auto">Tự chơi (AI)</option><option value="manual">Thủ công</option></select></div>
@@ -126,6 +137,26 @@
     <ul id="import-list" class="files"></ul>
   </dialog>
 
+  <script>
+    (function () {
+      var sel = document.getElementById("weapon");
+      var names = ["Súng nước", "Plasma", "Lửa", "Sét", "Hư Không"];
+      window.gvWeapon = 0;
+      window.gvResolveWeapon = function () {
+        var v = Number(sel.value);
+        window.gvWeapon = v === -2 ? Math.floor(Math.random() * 5) : v;
+        var label = document.querySelector('label[for="weapon"]');
+        if (label && v === -2) label.textContent = "Vũ khí (ngẫu nhiên: " + names[window.gvWeapon] + ")";
+        return window.gvWeapon;
+      };
+      sel.addEventListener("change", window.gvResolveWeapon);
+      ["make", "apply", "random-seed"].forEach(function (id) {
+        var b = document.getElementById(id);
+        if (b) b.addEventListener("click", window.gvResolveWeapon);
+      });
+      window.gvResolveWeapon();
+    })();
+  </script>
   <script src="assets/game.js"></script>
 </body>
 </html>
