@@ -86,7 +86,10 @@ class HostClient:
             q = urllib.parse.urlencode({"action": "get", "cat": folder, "file": file})
             zip_path.write_bytes(self._request(f"{self.host}/api.php?{q}"))
         try:
-            return safe_extract(zip_path, game_dir)
+            written = safe_extract(zip_path, game_dir)
+            if kind == "monster":
+                save_monster_meta(zip_path, game_dir, Path(file).stem)
+            return written
         finally:
             zip_path.unlink(missing_ok=True)
 
@@ -194,6 +197,19 @@ def _facings(self) -> dict[str, str]:
 HostClient.scenarios = _scenarios
 HostClient.delete_scenario = _delete_scenario
 HostClient.facings = _facings
+
+
+def save_monster_meta(zip_path: Path, game_dir: Path, ident: str) -> None:
+    """Lưu ranged_info của quái tấn công từ xa thành monsters/<id>/meta.json (info.json không được giải nén)."""
+    with zipfile.ZipFile(zip_path) as zf:
+        try:
+            info = json.loads(zf.read("info.json").decode("utf-8"))
+        except (KeyError, ValueError):
+            return
+    ranged = info.get("ranged_info") if isinstance(info, dict) else None
+    folder = game_dir / "monsters" / ident
+    if isinstance(ranged, dict) and folder.is_dir():
+        (folder / "meta.json").write_text(json.dumps({"ranged_info": ranged}, ensure_ascii=False), encoding="utf-8")
 
 
 def safe_extract(zip_path: Path, game_dir: Path) -> list[str]:
