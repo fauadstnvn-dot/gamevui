@@ -17,6 +17,10 @@ on:
         description: "Upload lên YouTube sau khi dựng (true/false)"
         required: false
         default: "true"
+      short:
+        description: "Đăng thêm YouTube Short (cắt phân cảnh + biểu ngữ) sau video chính (true/false)"
+        required: false
+        default: "true"
       privacy:
         description: "Chế độ hiển thị: public / unlisted / private"
         required: false
@@ -145,7 +149,7 @@ jobs:
           DB_NAME: ${{ secrets.DB_NAME }}
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASS: ${{ secrets.DB_PASS }}
-        run: python -m render.publish --dir output --category 20 --privacy ${{ inputs.privacy || 'public' }}
+        run: python -m render.publish --dir output --category 20 --privacy ${{ inputs.privacy || 'public' }} ${{ inputs.short == 'false' && '--no-short' || '' }}
 
       - name: Xóa kịch bản ưu tiên và cảnh chon-canh-vat đã dùng (sau khi upload thành công)
         if: ${{ success() && (steps.publish.outcome == 'success' || inputs.upload == 'false') }}
