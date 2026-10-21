@@ -1202,6 +1202,273 @@
     Ue = 430,
     dn = 100,
     pn = 135;
+
+  // ===== Terrain / atmosphere (seeded per video) =====
+  var GT = { on: !0, scroll: 0, time: 0, dur: 240, ter: null, roll: 0, zoom: 1, night: 0, tint: null, tintA: 0 },
+    trCache = {};
+  function trSmooth(x) {
+    return ((x = x < 0 ? 0 : x > 1 ? 1 : x), x * x * (3 - 2 * x));
+  }
+  function trHash(i, k) {
+    let s = Math.sin(i * 127.1 + k * 311.7) * 43758.5453;
+    return s - Math.floor(s);
+  }
+  function trMake(seed) {
+    let key = String(seed);
+    if (trCache[key]) return trCache[key];
+    let r = Z(ye(seed, 4242)),
+      cs = [],
+      x = 0,
+      lastKind = "",
+      kinds = ["hills", "hills", "steps", "steep", "valley", "flat"],
+      weathers = ["none", "none", "rain", "snow", "fireflies", "leaves", "fog", "storm", "sparkle"],
+      weather = r.chance(0.5) ? "none" : r.pick(weathers);
+    while (x < 600000) {
+      let kind = r.pick(kinds);
+      if (kind === lastKind && kind !== "hills") kind = "hills";
+      lastKind = kind;
+      let len = r.range(2600, 5400),
+        c = {
+          x0: x,
+          x1: x + len,
+          kind,
+          amp: r.range(32, 58),
+          wl: r.range(900, 1500),
+          ph: r.range(0, 6.283),
+          ph2: r.range(0, 6.283),
+          stepLen: r.range(520, 760),
+          levels: [],
+        };
+      for (let i = 0, n = Math.ceil(len / c.stepLen) + 3; i < n; i++)
+        c.levels.push(r.pick([-52, -34, -18, 0, 10, 24]));
+      if (r.chance(0.4)) weather = r.pick(weathers);
+      c.weather = weather;
+      cs.push(c);
+      x += len;
+    }
+    for (let i = 0; i < cs.length; i++) {
+      cs[i].sameStart = i > 0 && cs[i - 1].weather === cs[i].weather;
+      cs[i].sameEnd = i < cs.length - 1 && cs[i + 1].weather === cs[i].weather;
+    }
+    return (trCache[key] = { chapters: cs, ci: 0, todOff: r.range(0, 1) });
+  }
+  function trChap(wx) {
+    let T = GT.ter;
+    if (!T) return null;
+    let cs = T.chapters,
+      i = T.ci | 0;
+    while (i > 0 && wx < cs[i].x0) i--;
+    while (i < cs.length - 1 && wx >= cs[i].x1) i++;
+    T.ci = i;
+    return cs[i];
+  }
+  function trOff(wx) {
+    if (!GT.on || !GT.ter || wx <= 0) return 0;
+    let c = trChap(wx),
+      lx = wx - c.x0,
+      len = c.x1 - c.x0,
+      env = trSmooth(lx / 500) * trSmooth((len - lx) / 500),
+      f = 0,
+      TAU = Math.PI * 2;
+    switch (c.kind) {
+      case "hills":
+        f = c.amp * (Math.sin((TAU * lx) / c.wl + c.ph) * 0.62 + Math.sin((TAU * lx) / (c.wl * 0.43) + c.ph2) * 0.38);
+        break;
+      case "steps": {
+        let k = Math.floor(lx / c.stepLen),
+          t = trSmooth(((lx - k * c.stepLen) / c.stepLen - 0.62) / 0.38);
+        f = c.levels[k] + (c.levels[k + 1] - c.levels[k]) * t;
+        break;
+      }
+      case "steep":
+        f = -c.amp * 1.05 * Math.pow(0.5 - 0.5 * Math.cos((TAU * lx) / (c.wl * 1.8)), 1.25);
+        break;
+      case "valley":
+        f = 0.55 * c.amp * (0.5 - 0.5 * Math.cos((TAU * lx) / (c.wl * 1.6))) + 6 * Math.sin((TAU * lx) / 380 + c.ph);
+        break;
+    }
+    f = f > 0 ? f * 0.5 : f;
+    return Math.max(-62, Math.min(30, f)) * env;
+  }
+  function trY(x) {
+    return P + trOff(GT.scroll + x);
+  }
+  function trSlope(x) {
+    return (trOff(GT.scroll + x + 8) - trOff(GT.scroll + x - 8)) / 16;
+  }
+  function trFollow(o) {
+    if (o.def.kind !== "walk") return;
+    let off = trOff(GT.scroll + o.x),
+      d = off - (o.gOff || 0);
+    o.gOff = off;
+    d && ((o.y += d), o.baseY != null && (o.baseY += d));
+  }
+  function trFollowP(o) {
+    if (o.gravity || o.noTf) return;
+    let off = trOff(GT.scroll + o.x),
+      d = off - (o.gOff || 0);
+    ((o.gOff = off), d && (o.y += d));
+  }
+  function trTodCalc(time) {
+    let T = GT.ter,
+      p = (time / Math.max(30, GT.dur) + (T ? T.todOff : 0)) % 1,
+      K = [
+        [0, 255, 170, 140, 0.16, 0],
+        [0.12, 255, 255, 255, 0, 0],
+        [0.45, 255, 255, 255, 0, 0],
+        [0.62, 255, 120, 70, 0.2, 0],
+        [0.78, 14, 22, 80, 0.3, 1],
+        [0.92, 14, 22, 80, 0.3, 1],
+        [1, 255, 170, 140, 0.16, 0],
+      ],
+      i = 0;
+    while (i < K.length - 2 && p > K[i + 1][0]) i++;
+    let a = K[i],
+      b = K[i + 1],
+      u = trSmooth((p - a[0]) / (b[0] - a[0])),
+      m = (j) => a[j] + (b[j] - a[j]) * u;
+    ((GT.night = m(5)),
+      (GT.tint = `rgba(${Math.round(m(1))},${Math.round(m(2))},${Math.round(m(3))},${m(4).toFixed(3)})`),
+      (GT.tintA = m(4)));
+  }
+  function trSync(e, dt) {
+    GT.on = !(typeof window !== "undefined" && window.__gvFlat);
+    GT.ter = (e.plan && e.plan.terrain) || null;
+    GT.scroll = e.scroll;
+    GT.time = e.time;
+    GT.dur = e.director && e.director.scenario ? e.director.scenario.duration : 240;
+    let p = e.player,
+      tr = GT.on ? Math.max(-0.025, Math.min(0.025, -Math.atan(trSlope(p.x)) * 0.15)) : 0,
+      tz = GT.on ? 1.06 : 1,
+      k = 1 - Math.exp(-dt * 2.5);
+    ((GT.roll += (tr - GT.roll) * k), (GT.zoom += (tz - GT.zoom) * k));
+  }
+  function trSyncR(t) {
+    ((GT.on = !(typeof window !== "undefined" && window.__gvFlat)),
+      (GT.ter = (t.plan && t.plan.terrain) || null),
+      (GT.scroll = t.scroll),
+      (GT.time = t.time),
+      (GT.dur = t.director && t.director.scenario ? t.director.scenario.duration : 240));
+    GT.on ? trTodCalc(t.time) : ((GT.night = 0), (GT.tint = null), (GT.tintA = 0));
+  }
+  function trSky(e) {
+    if (!GT.on || GT.night < 0.02) return;
+    let n = GT.night,
+      g = e.createLinearGradient(0, 0, 0, 440);
+    (g.addColorStop(0, `rgba(6,10,40,${0.78 * n})`), g.addColorStop(1, `rgba(40,30,90,${0.35 * n})`));
+    ((e.fillStyle = g), e.fillRect(0, 0, M, 440));
+    for (let i = 0; i < 90; i++) {
+      let x = trHash(i, 1) * M,
+        y = trHash(i, 2) * 360,
+        s = 0.8 + trHash(i, 3) * 1.6,
+        tw = 0.45 + 0.55 * Math.sin(GT.time * (1.2 + trHash(i, 4) * 2) + i * 7);
+      ((e.fillStyle = `rgba(255,252,230,${Math.max(0, tw) * n})`), e.fillRect(x, y, s, s));
+    }
+    let mg = e.createRadialGradient(M * 0.8, 120, 8, M * 0.8, 120, 120);
+    (mg.addColorStop(0, `rgba(255,248,220,${0.5 * n})`), mg.addColorStop(1, "rgba(255,248,220,0)"));
+    ((e.fillStyle = mg), e.fillRect(M * 0.8 - 120, 0, 240, 240));
+    ((e.fillStyle = `rgba(250,246,228,${n})`), e.beginPath(), e.arc(M * 0.8, 120, 32, 0, Math.PI * 2), e.fill());
+    ((e.fillStyle = `rgba(200,196,215,${0.45 * n})`), e.beginPath(), e.arc(M * 0.8 - 9, 112, 7, 0, Math.PI * 2), e.arc(M * 0.8 + 10, 130, 5, 0, Math.PI * 2), e.fill());
+  }
+  function trTint(e) {
+    GT.on && GT.tint && GT.tintA > 0.004 && ((e.fillStyle = GT.tint), e.fillRect(-40, -40, M + 80, E + 80));
+  }
+  function trDrawPlayer(e, n, t) {
+    let p = t.player,
+      ang = GT.on && p.onGround && !p.standing ? Math.atan(trSlope(p.x)) * 0.85 : 0;
+    (e.save(), e.translate(p.x, p.y), e.rotate(ang), e.translate(-p.x, -p.y), aa(e, n, t), e.restore());
+  }
+  function trWeather(e, t) {
+    if (!GT.on || !GT.ter) return;
+    let wx = GT.scroll + M / 2,
+      c = trChap(wx);
+    if (!c || c.weather === "none") return;
+    let lx = wx - c.x0,
+      len = c.x1 - c.x0,
+      a = 1;
+    (c.sameStart || (a = Math.min(a, trSmooth(lx / 700))), c.sameEnd || (a = Math.min(a, trSmooth((len - lx) / 700))));
+    if (a < 0.02) return;
+    let tm = t.time,
+      mod = (v, m) => ((v % m) + m) % m,
+      kind = c.weather;
+    e.save();
+    if (kind === "rain" || kind === "storm") {
+      let N = kind === "storm" ? 190 : 130,
+        vy = kind === "storm" ? 1150 : 900,
+        vx = -260;
+      ((e.fillStyle = `rgba(30,50,90,${(kind === "storm" ? 0.2 : 0.1) * a})`), e.fillRect(0, 0, M, E));
+      ((e.strokeStyle = `rgba(210,230,255,${0.5 * a})`), (e.lineWidth = 1.6), e.beginPath());
+      for (let i = 0; i < N; i++) {
+        let sp = 0.8 + trHash(i, 5) * 0.5,
+          x = mod(trHash(i, 1) * (M + 400) + tm * vx * sp, M + 400) - 100,
+          y = mod(trHash(i, 2) * (E + 80) + tm * vy * sp, E + 80) - 40;
+        (e.moveTo(x, y), e.lineTo(x + vx * 0.02, y + vy * 0.02));
+      }
+      if ((e.stroke(), kind === "storm")) {
+        let ph = mod(tm + c.x0 * 0.001, 6.7);
+        (ph < 0.09 || (ph > 0.2 && ph < 0.27)) && ((e.fillStyle = `rgba(255,255,255,${0.16 * a})`), e.fillRect(0, 0, M, E));
+      }
+    } else if (kind === "snow") {
+      e.fillStyle = `rgba(255,255,255,${0.9 * a})`;
+      for (let i = 0; i < 110; i++) {
+        let sp = 0.6 + trHash(i, 5) * 0.8,
+          x = mod(trHash(i, 1) * M + Math.sin(tm * 1.1 + i) * 30 - tm * 90 * sp, M + 20),
+          y = mod(trHash(i, 2) * E + tm * 70 * sp, E + 20),
+          s = 1.4 + trHash(i, 3) * 2.4;
+        (e.beginPath(), e.arc(x, y, s, 0, Math.PI * 2), e.fill());
+      }
+    } else if (kind === "leaves") {
+      for (let i = 0; i < 28; i++) {
+        let sp = 0.7 + trHash(i, 5) * 0.8,
+          x = mod(trHash(i, 1) * (M + 200) - tm * 210 * sp, M + 200) - 60,
+          y = mod(trHash(i, 2) * E + tm * 55 * sp + Math.sin(tm * 2 + i) * 40, E + 40);
+        ((e.fillStyle = `hsla(${20 + trHash(i, 6) * 40},85%,55%,${0.85 * a})`),
+          e.save(),
+          e.translate(x, y),
+          e.rotate(tm * 2 + i),
+          e.beginPath(),
+          e.ellipse(0, 0, 9, 4.5, 0, 0, Math.PI * 2),
+          e.fill(),
+          e.restore());
+      }
+    } else if (kind === "fireflies") {
+      ((e.fillStyle = `rgba(10,15,50,${0.12 * a})`), e.fillRect(0, 0, M, E));
+      for (let i = 0; i < 36; i++) {
+        let x = mod(trHash(i, 1) * M + Math.sin(tm * 0.7 + i * 3) * 60 - tm * 25, M),
+          y = 260 + trHash(i, 2) * 300 + Math.cos(tm * 0.9 + i * 2) * 36,
+          p = Math.max(0, 0.5 + 0.5 * Math.sin(tm * 3 + i * 5)),
+          g = e.createRadialGradient(x, y, 0, x, y, 16);
+        (g.addColorStop(0, `rgba(255,248,150,${0.95 * p * a})`),
+          g.addColorStop(1, "rgba(255,248,150,0)"),
+          (e.fillStyle = g),
+          e.fillRect(x - 16, y - 16, 32, 32));
+      }
+    } else if (kind === "fog") {
+      for (let i = 0; i < 6; i++) {
+        let x = mod(i * 260 - tm * 28 * (1 + i * 0.18), M + 700) - 350,
+          y = 420 + i * 34,
+          g = e.createRadialGradient(x, y, 20, x, y, 380);
+        (g.addColorStop(0, `rgba(255,255,255,${0.2 * a})`), g.addColorStop(1, "rgba(255,255,255,0)"), (e.fillStyle = g), e.fillRect(x - 380, y - 380, 760, 760));
+      }
+    } else if (kind === "sparkle") {
+      for (let i = 0; i < 44; i++) {
+        let x = mod(trHash(i, 1) * M - tm * 40, M),
+          y = trHash(i, 2) * (P - 40),
+          p = Math.max(0, Math.sin(tm * 2.2 + i * 5)),
+          s = 3 + trHash(i, 3) * 5;
+        ((e.fillStyle = `hsla(${300 + trHash(i, 6) * 80},95%,85%,${p * a})`),
+          e.save(),
+          e.translate(x, y),
+          e.rotate(Math.PI / 4),
+          e.fillRect(-s / 2, -s / 2, s, s),
+          e.rotate(Math.PI / 4),
+          e.fillRect(-s / 2, -s / 2, s, s),
+          e.restore());
+      }
+    }
+    e.restore();
+  }
+  // ===== end terrain =====
   function Be(e, n, t, a, i) {
     var m, d;
     let r = Z(ye(n, t, 7919)),
@@ -1222,7 +1489,7 @@
       u = l.length ? l : gvMo.length ? gvMo : e.monsters,
       c = r.shuffle(u.slice()).slice(0, l.length ? Math.min(10, l.length) : 7),
       h = r.shuffle(e.platforms.slice()).slice(0, 3);
-    return { scenery: o, monsters: c, mouth: gvMouth, platformSprites: h };
+    return { scenery: o, monsters: c, mouth: gvMouth, platformSprites: h, terrain: trMake(n) };
   }
   function gn(e) {
     let n = e.pick(["balanced", "sniper", "collector", "daredevil"]),
@@ -1742,14 +2009,14 @@
     e.platforms.push(o);
     let l = n.int(3, 5);
     for (let u = 0; u < l; u++)
-      ee(e, o.x - a / 2 + 50 + u * ((a - 100) / (l - 1)), r - 44, { vx: 0 });
+      ee(e, o.x - a / 2 + 50 + u * ((a - 100) / (l - 1)), r - 44, { vx: 0, noTf: !0 });
     n.chance(0.3) &&
       K(
         e,
         n.pick(["double", "halo", "lightning", "meteor", "heal", "gun"]),
         o.x,
         r - 100,
-        { gunIdx: Math.min(9, e.player.gun + 1) },
+        { gunIdx: Math.min(9, e.player.gun + 1), noTf: !0 },
       );
   }
   function bt(e, n, t, a, i = 1) {
@@ -2671,6 +2938,7 @@
     if (
       (e.tick++,
       (e.time += t),
+      trSync(e, t),
       (t *= mn),
       skTick(e, t),
       (e.intent = (o = n.intent) != null ? o : e.intent),
@@ -2953,9 +3221,10 @@
           break;
         }
     }
-    (a.y >= P && !a.standing
-      ? (a.onGround || A(e, "dust", a.x, P, 60, 0.3),
-        (a.y = P),
+    (a.onGround && !a.standing && a.soarT <= 0 && ((a.y = trY(a.x)), (a.vy = 0)),
+      a.y >= trY(a.x) && !a.standing
+      ? (a.onGround || A(e, "dust", a.x, trY(a.x), 60, 0.3),
+        (a.y = trY(a.x)),
         (a.vy = 0),
         (a.onGround = !0),
         (a.jumpsLeft = 2))
@@ -3405,6 +3674,7 @@
                 A(e, "ring", o.x, o.y, o.h * 1.1, 0.45),
                 o.def.kind === "walk" && A(e, "ring", o.x, P + 4, o.w * 1.2, 0.5),
                 ((gvN0 = e.fireballs.length), Dn(e, o), gvMark(e, o, gvN0)))));
+      trFollow(o);
       o.x < -o.w && (e.monsters = e.monsters.filter((u) => u !== o));
     }
     for (let o of e.bullets.slice())
@@ -3431,7 +3701,7 @@
             l.invuln <= 0 &&
             l.haloT <= 0 &&
             Math.abs(o.x - l.x) < o.r + 30 &&
-            l.y > P - 70 &&
+            l.y > trY(l.x) - 70 &&
             (pt(
               e,
               l.x,
@@ -3464,9 +3734,9 @@
               he(e, "NEAR MISS!", l.x, l.y - 170, "#7fe3ff", 36, 1));
           }
         }
-        if (!o.reflected && o.age >= 0 && o.y > P + 10) {
-          (A(e, "boom", o.x, P, 70, 0.25),
-            o.spr && gvImpact(e, o, o.x, P - 20),
+        if (!o.reflected && o.age >= 0 && o.y > trY(o.x) + 10) {
+          (A(e, "boom", o.x, trY(o.x), 70, 0.25),
+            o.spr && gvImpact(e, o, o.x, trY(o.x) - 20),
             (e.fireballs = e.fireballs.filter((l) => l !== o)));
           continue;
         }
@@ -3484,7 +3754,7 @@
     for (let o of e.pickups.slice()) {
       if (((o.age += n), o.gravity)) {
         ((o.vy += 1500 * n), (o.x += o.vx * n), (o.y += o.vy * n));
-        let l = P - 40;
+        let l = trY(o.x) - 40;
         (o.y >= l &&
           ((o.y = l),
           (o.vy *= -0.35),
@@ -3492,6 +3762,7 @@
           Math.abs(o.vy) < 90 && ((o.vy = 0), (o.gravity = !1), (o.vx = 0))),
           (o.x -= a * n * 0.5));
       } else o.x -= a * n;
+      trFollowP(o);
       if (o.kind === "coin") {
         let l = t.x,
           u = t.y - 70,
@@ -3512,11 +3783,11 @@
           ((e.platforms = e.platforms.filter((l) => l !== o)),
           t.standing === o && (t.standing = null)));
     for (let o of e.meteors.slice())
-      if (((o.x += o.vx * n), (o.y += o.vy * n), o.y >= P - 20)) {
-        (A(e, "boom", o.x, P - 40, 190, 0.5),
+      if (((o.x += o.vx * n), (o.y += o.vy * n), o.y >= trY(o.x) - 20)) {
+        (A(e, "boom", o.x, trY(o.x) - 40, 190, 0.5),
           (e.shake = Math.max(e.shake, 0.15)));
         for (let l of e.monsters.slice())
-          Math.hypot(l.x - o.x, l.y - (P - 60)) < 150 &&
+          Math.hypot(l.x - o.x, l.y - (trY(o.x) - 60)) < 150 &&
             $e(e, l, 55 + e.stage * 15);
         e.meteors = e.meteors.filter((l) => l !== o);
       }
@@ -3770,7 +4041,7 @@
       if (r.x < n.x - 30 || r.x > n.x + 640) continue;
       let s = Kn(e, r) * t.pickupWeight;
       if (s <= 0) continue;
-      let o = P - 70 - r.y;
+      let o = trY(r.x) - 70 - r.y;
       if (o > 270) continue;
       let l = Math.abs(r.x - n.x),
         u = s / (l * 0.01 + 1.2) - o * 0.003;
@@ -3851,13 +4122,13 @@
         x = b / w;
       (b > -60 &&
         x < 0.5 &&
-        n.y > P - 40 &&
+        n.y > trY(n.x) - 40 &&
         ((y = !0), (c = "Nh\u1EA3y qua qu\xE1i")),
         n.jumpsLeft === 1 &&
           !n.onGround &&
           b > -60 &&
           b < 70 &&
-          n.y > P - 90 &&
+          n.y > trY(n.x) - 90 &&
           (y = !0));
     }
     for (let f of e.monsters)
@@ -3969,6 +4240,7 @@
     s
       ? e.drawImage(s, 0, 0, M, E)
       : ((e.fillStyle = "#9ad1ff"), e.fillRect(0, 0, M, E));
+    trSky(e);
     let o = [
       ["mountain-far", 0.04, 360, 600],
       ["far", 0.1, 330, 610],
@@ -3981,39 +4253,45 @@
       let k = r[c],
         g = k && G(n, k.src);
       if (!g) continue;
-      let y = (k.size[0] * m) / k.size[1],
+      let sm = n.getSeamless(k.src) || g,
+        y = (sm.width * m) / sm.height,
         S = a * h;
-      for (let f = Math.floor(S / y); f * y - S < M; f++) {
-        let p = Math.floor(f * y - S);
-        f % 2 === 0
-          ? e.drawImage(g, p, d - m, Math.ceil(y) + 1, m)
-          : (e.save(),
-            e.translate(p + Math.ceil(y) + 1, 0),
-            e.scale(-1, 1),
-            e.drawImage(g, 0, d - m, Math.ceil(y) + 1, m),
-            e.restore());
-      }
+      for (let f = Math.floor(S / y); f * y - S < M; f++)
+        e.drawImage(sm, Math.floor(f * y - S), d - m, Math.ceil(y) + 1, m);
     }
     let l = r.road && G(n, r.road.src),
       u = P - 22;
     if (l) {
-      let c = E - u,
-        h = (r.road.size[0] * c) / r.road.size[1],
-        m = -(a % h),
-        d = n.getWhiteTopRows(r.road.src);
-      for (let k = m; k < M; k += h)
-        e.drawImage(
-          l,
-          0,
-          d,
-          l.naturalWidth,
-          l.naturalHeight - d,
-          Math.floor(k),
-          u,
-          Math.ceil(h) + 1,
-          c,
-        );
-    } else ((e.fillStyle = "#6b4a2b"), e.fillRect(0, u, M, E - u));
+      let sm = n.getSeamless(r.road.src) || l,
+        d = n.getWhiteTopRows(r.road.src),
+        c = E - u,
+        h = (sm.width * c) / sm.height,
+        SW = 24,
+        bh = sm.height - d;
+      for (let sx = Math.floor(a / SW) * SW - a; sx < M; sx += SW) {
+        let y0 = trY(sx) - 22,
+          y1 = trY(sx + SW) - 22,
+          u0 = ((((a + sx) % h) + h) % h) / h * sm.width,
+          sw = (SW / h) * sm.width,
+          first = Math.min(sw, sm.width - u0),
+          dw = (first / sw) * SW;
+        e.save();
+        e.transform(1, (y1 - y0) / SW, 0, 1, Math.floor(sx), y0);
+        e.fillStyle = sm.bc || "#4a2f1c";
+        e.fillRect(0, c - 1, SW + 1, 260);
+        e.drawImage(sm, u0, d, first, bh, 0, 0, Math.ceil(dw) + 1, c);
+        if (first < sw) e.drawImage(sm, 0, d, sw - first, bh, dw, 0, SW - dw + 1, c);
+        e.restore();
+      }
+    } else {
+      e.fillStyle = "#6b4a2b";
+      e.beginPath();
+      e.moveTo(0, E);
+      for (let sx = 0; sx <= M; sx += 16) e.lineTo(sx, trY(sx) - 22);
+      e.lineTo(M, E);
+      e.closePath();
+      e.fill();
+    }
     e.restore();
   }
   function Un(e, n, t) {
@@ -4787,11 +5065,11 @@
       h = i && l ? G(n, l) : null,
       m = a.invuln > 0 && Math.floor(t.time * 14) % 2 === 0 && a.haloT <= 0;
     (e.save(), m && (e.globalAlpha = 0.45), (e.fillStyle = "rgba(0,0,0,0.28)"));
-    let d = Math.max(0, P - a.y);
+    let d = Math.max(0, trY(a.x) - a.y);
     (e.beginPath(),
       e.ellipse(
         a.x,
-        P + 6,
+        trY(a.x) + 6,
         120 * (r.fly ? 0.7 : 1) * (1 - Math.min(0.5, d / 400)),
         14,
         0,
@@ -7197,14 +7475,15 @@
     var o, l;
     (e.save(), e.clearRect(0, 0, M, E));
     let i = t.cam;
-    if (i.z > 1.001 || Math.abs(i.roll) > 0.001) {
-      let u = i.z,
+    trSyncR(t);
+    if (GT.on || i.z > 1.001 || Math.abs(i.roll) > 0.001) {
+      let u = i.z * GT.zoom,
         c = M / 2 / u,
         h = E / 2 / u,
         m = Math.max(c, Math.min(M - c, i.x)),
         d = Math.max(h, Math.min(E - h, i.y));
       (e.translate(M / 2, E / 2),
-        e.rotate(i.roll),
+        e.rotate(i.roll + GT.roll),
         e.scale(u, u),
         e.translate(-m, -d));
     }
@@ -7213,18 +7492,20 @@
       St(e, n, t.plan.scenery, t.scroll, 1),
       t.fadeFrom &&
         St(e, n, t.fadeFrom, t.scroll, Math.max(0, Math.min(1, t.fadeT / 1.4))),
+      trTint(e),
       Un(e, n, t));
     for (let u of t.platforms) Xn(e, n, u);
     for (let u of t.pickups) Qn(e, n, t, u);
     Vn(e, t);
     let s = t.monsters.slice().sort((u, c) => u.y + u.h - (c.y + c.h));
     for (let u of s) na(e, n, u, t.player.x);
-    ((t.phase !== "dead" || Math.floor(t.time * 10) % 2 === 0) && aa(e, n, t),
+    ((t.phase !== "dead" || Math.floor(t.time * 10) % 2 === 0) && trDrawPlayer(e, n, t),
       oa(e, n, t),
       _n(e, t, n),
       ra(e, n, t),
       ia(e, n, t),
-      skDraw(e, t));
+      skDraw(e, t),
+      trWeather(e, t));
     for (let u of t.floaters) {
       (e.save(),
         (e.globalAlpha = Math.max(0, 1 - Math.pow(u.t / u.life, 2))),
@@ -7262,6 +7543,52 @@
       C(this, "pending", new Map());
       C(this, "cutouts", new Map());
       C(this, "roadTops", new Map());
+      C(this, "seamless", new Map());
+    }
+    getSeamless(n) {
+      let c = this.seamless.get(n);
+      if (c) return c;
+      let t = this.get(n);
+      if (!t) return null;
+      let w = t.naturalWidth,
+        h = t.naturalHeight,
+        f = Math.round(w * 0.22);
+      f * 3 > w && (f = 0);
+      c = document.createElement("canvas");
+      c.width = w - f;
+      c.height = h;
+      let g = c.getContext("2d");
+      if (!f) g.drawImage(t, 0, 0);
+      else {
+        g.drawImage(t, f, 0, w - 2 * f, h, f, 0, w - 2 * f, h);
+        let part = (sx, fadeIn) => {
+          let p = document.createElement("canvas");
+          p.width = f;
+          p.height = h;
+          let q = p.getContext("2d");
+          q.drawImage(t, sx, 0, f, h, 0, 0, f, h);
+          let gr = q.createLinearGradient(0, 0, f, 0);
+          gr.addColorStop(0, fadeIn ? "rgba(0,0,0,0)" : "rgba(0,0,0,1)");
+          gr.addColorStop(1, fadeIn ? "rgba(0,0,0,1)" : "rgba(0,0,0,0)");
+          q.globalCompositeOperation = "destination-in";
+          q.fillStyle = gr;
+          q.fillRect(0, 0, f, h);
+          return p;
+        };
+        g.globalCompositeOperation = "lighter";
+        g.drawImage(part(w - f, !1), 0, 0);
+        g.drawImage(part(0, !0), 0, 0);
+      }
+      try {
+        let q = document.createElement("canvas");
+        q.width = q.height = 1;
+        let x = q.getContext("2d");
+        x.drawImage(c, 0, Math.max(0, h - 6), c.width, 6, 0, 0, 1, 1);
+        let px = x.getImageData(0, 0, 1, 1).data;
+        c.bc = `rgb(${px[0]},${px[1]},${px[2]})`;
+      } catch (_) {}
+      this.seamless.set(n, c);
+      return c;
     }
     get(n) {
       let t = this.cache.get(n);
