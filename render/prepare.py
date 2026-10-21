@@ -196,6 +196,14 @@ def main() -> None:
     manifest["sceneries"] = [e for e in manifest["sceneries"] if e["id"] in ids(scenery)]
     manifest["mounts"] = [e for e in manifest["mounts"] if e["id"] in ids(mount)]
     manifest["monsters"] = [e for e in manifest["monsters"] if e["id"] in ids(monsters)]
+    facings = client.facings()
+    for entry in manifest["monsters"]:
+        facing = facings.get(entry["id"])
+        if facing:
+            entry["facing"] = facing
+        else:
+            entry.pop("facing", None)
+        print(f"  hướng quái {entry['id']}: {entry.get('facing', 'dự phòng trong game')}")
     (game / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
 
     music_file = ""
