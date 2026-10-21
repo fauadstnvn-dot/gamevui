@@ -1378,6 +1378,282 @@
       ang = GT.on && p.onGround && !p.standing ? Math.atan(trSlope(p.x)) * 0.85 : 0;
     (e.save(), e.translate(p.x, p.y), e.rotate(ang), e.translate(-p.x, -p.y), aa(e, n, t), e.restore());
   }
+  // ===== Random comedy gags (seeded per video) =====
+  function gagS(e) {
+    if (!e.gag) {
+      let sd = e.seed || (e.plan && e.plan.seed) || 1;
+      e.gag = { rng: Z(ye(sd, 9091)), next: 14 + (sd % 7), items: [], conf: [], bird: null, hatUntil: 0, bonkT: 0, n: 0 };
+    }
+    return e.gag;
+  }
+  function gagOn() {
+    return !(typeof window !== "undefined" && window.__gvNoGag);
+  }
+  function gagTick(e, dt) {
+    if (!gagOn() || e.phase !== "play") return;
+    let g = gagS(e),
+      r = g.rng,
+      wx = GT.scroll;
+    if (e.time >= g.next && !(e.strike) && e.time - (e.lvT0 == null ? -99 : e.lvT0) > 3) {
+      let kinds = ["rain", "confetti", "bird", "hats"],
+        k = kinds[r.int(0, 3)];
+      if (k === "rain") {
+        for (let i = 0; i < 16; i++)
+          g.items.push({
+            wx: wx + r.range(40, M - 40),
+            y: -60 - i * r.range(60, 140),
+            vy: 0,
+            vx: r.range(-40, 40),
+            rot: r.range(0, 6.28),
+            vr: r.range(-4, 4),
+            kind: r.int(0, 2),
+            b: 0,
+            rest: 0,
+          });
+        he(e, T(e.lang, "MƯA ĐỒ VÔ LÝ!", "IT'S RAINING STUFF!"), M / 2, 140, "#ffe066", 40, 1.4);
+      } else if (k === "confetti") {
+        let cx = wx + r.range(200, M - 200);
+        for (let i = 0; i < 90; i++)
+          g.conf.push({
+            wx: cx + r.range(-30, 30),
+            y: trY(cx - wx) - 10,
+            vx: r.range(-260, 260),
+            vy: r.range(-1000, -450),
+            rot: r.range(0, 6.28),
+            vr: r.range(-9, 9),
+            c: `hsl(${r.int(0, 359)},90%,60%)`,
+            t: 0,
+          });
+        he(e, T(e.lang, "TIỆC TÙNG!", "PARTY TIME!"), cx - wx, 260, "#ff7ad9", 40, 1.2);
+      } else if (k === "bird") {
+        g.bird = { sx: -90, v: r.range(420, 560) };
+        he(e, T(e.lang, "CỤC TÁC!", "BAWK!"), 140, 300, "#fff", 36, 1.0);
+      } else {
+        g.hatUntil = e.time + 9;
+        g.hatSeed = r.int(1, 99999);
+        he(e, T(e.lang, "TIỆC MŨ!", "HAT PARTY!"), M / 2, 150, "#7dd3fc", 40, 1.4);
+      }
+      g.next = e.time + r.range(18, 38);
+    }
+    for (let it of g.items) {
+      let gy = P + trOff(it.wx) - 12;
+      it.vy += 1500 * dt;
+      it.y += it.vy * dt;
+      it.wx += it.vx * dt;
+      it.rot += it.vr * dt;
+      if (it.y >= gy && it.vy > 0) {
+        it.y = gy;
+        if (it.b < 3) {
+          it.vy = -it.vy * 0.55;
+          it.vx *= 0.8;
+          it.vr *= 0.7;
+          it.b++;
+        } else {
+          it.vy = 0;
+          it.vx = 0;
+          it.vr = 0;
+        }
+      }
+      if (it.b >= 3) it.rest += dt;
+    }
+    g.items = g.items.filter((it) => it.rest < 1.2 && it.wx > wx - 200);
+    for (let c of g.conf) {
+      c.vy += 900 * dt;
+      c.vx *= 1 - 0.8 * dt;
+      c.wx += c.vx * dt;
+      c.y += c.vy * dt;
+      c.rot += c.vr * dt;
+      c.t += dt;
+    }
+    g.conf = g.conf.filter((c) => c.t < 2.8);
+    if (g.bird) {
+      g.bird.sx += g.bird.v * dt;
+      if (g.bird.sx > M + 90) g.bird = null;
+    }
+  }
+  function gagBonk(e, m) {
+    if (!gagOn()) return;
+    let g = gagS(e);
+    if (e.time < g.bonkT || g.rng.next() > 0.14) return;
+    g.bonkT = e.time + 3;
+    let w = [
+      ["BỐP!", "BONK!"],
+      ["BÙM!", "BOING!"],
+      ["CHÁT!", "SPLAT!"],
+      ["ÚI DA!", "OOF!"],
+    ][g.rng.int(0, 3)];
+    he(e, T(e.lang, w[0], w[1]), m.x, m.y - m.h * 0.9, "#ffe066", 40, 0.8);
+    e.shake = Math.max(e.shake, 0.25);
+  }
+  function gagHats(e, t) {
+    let g = t.gag;
+    if (!gagOn() || !g || t.time > g.hatUntil) return;
+    let fade = Math.min(1, (g.hatUntil - t.time) / 0.5);
+    for (let m of t.monsters) {
+      if (m.burrow || m.hp <= 0 || m.deathT > 0 || m.x < -40 || m.x > M + 40) continue;
+      let kind = (ye(g.hatSeed, Math.round(m.spawnX != null ? m.spawnX : m.baseX != null ? m.baseX : m.w * 7 + m.maxHp)) % 3),
+        s = Math.max(22, m.h * 0.28),
+        x = m.x,
+        y = m.y - m.h / 2 - 6 + Math.sin(m.age * 9) * 2;
+      e.save();
+      e.globalAlpha = fade;
+      e.translate(x, y);
+      e.lineWidth = 3;
+      e.strokeStyle = "rgba(20,0,30,0.85)";
+      if (kind === 0) {
+        e.fillStyle = "#ff4d8d";
+        e.beginPath();
+        e.moveTo(-s * 0.6, 0);
+        e.lineTo(0, -s * 1.5);
+        e.lineTo(s * 0.6, 0);
+        e.closePath();
+        e.fill();
+        e.stroke();
+        e.fillStyle = "#ffe066";
+        e.beginPath();
+        e.arc(0, -s * 1.5, s * 0.2, 0, 6.28);
+        e.fill();
+      } else if (kind === 1) {
+        e.fillStyle = "#222";
+        e.fillRect(-s * 0.8, -s * 0.15, s * 1.6, s * 0.2);
+        e.fillRect(-s * 0.5, -s * 1.1, s, s * 0.95);
+        e.strokeRect(-s * 0.5, -s * 1.1, s, s * 0.95);
+        e.fillStyle = "#c0392b";
+        e.fillRect(-s * 0.5, -s * 0.4, s, s * 0.18);
+      } else {
+        e.fillStyle = "#3ec1d3";
+        e.beginPath();
+        e.arc(0, 0, s * 0.6, Math.PI, 0);
+        e.closePath();
+        e.fill();
+        e.stroke();
+        e.save();
+        e.translate(0, -s * 0.65);
+        e.rotate(t.time * 18);
+        e.fillStyle = "#ffe066";
+        e.fillRect(-s * 0.7, -2, s * 1.4, 4);
+        e.restore();
+      }
+      e.restore();
+    }
+  }
+  function gagDraw(e, t) {
+    let g = t.gag;
+    if (!gagOn() || !g) return;
+    let sc = GT.scroll;
+    for (let it of g.items) {
+      let x = it.wx - sc;
+      if (x < -60 || x > M + 60) continue;
+      e.save();
+      e.globalAlpha = Math.min(1, (1.2 - it.rest) / 0.4);
+      e.translate(x, it.y);
+      e.rotate(it.rot);
+      e.lineWidth = 3;
+      e.strokeStyle = "rgba(20,0,30,0.85)";
+      if (it.kind === 0) {
+        e.fillStyle = "#ffd93b";
+        e.beginPath();
+        e.ellipse(0, 6, 22, 15, 0, 0, 6.28);
+        e.fill();
+        e.stroke();
+        e.beginPath();
+        e.arc(14, -10, 10, 0, 6.28);
+        e.fill();
+        e.stroke();
+        e.fillStyle = "#ff8a1f";
+        e.beginPath();
+        e.moveTo(22, -10);
+        e.lineTo(33, -6);
+        e.lineTo(22, -3);
+        e.closePath();
+        e.fill();
+        e.fillStyle = "#111";
+        e.beginPath();
+        e.arc(16, -13, 2, 0, 6.28);
+        e.fill();
+      } else if (it.kind === 1) {
+        e.strokeStyle = "rgba(20,0,30,0.85)";
+        e.lineWidth = 17;
+        e.beginPath();
+        e.arc(0, 0, 14, 0, 6.28);
+        e.stroke();
+        e.strokeStyle = "#f7a8c8";
+        e.lineWidth = 11;
+        e.beginPath();
+        e.arc(0, 0, 14, 0, 6.28);
+        e.stroke();
+        e.fillStyle = "#fff";
+        for (let i = 0; i < 6; i++) e.fillRect(Math.cos(i * 1.05) * 14 - 1, Math.sin(i * 1.05) * 14 - 3, 2, 6);
+      } else {
+        e.fillStyle = "#f4b942";
+        e.beginPath();
+        e.moveTo(-18, -14);
+        e.lineTo(18, -14);
+        e.lineTo(0, 22);
+        e.closePath();
+        e.fill();
+        e.stroke();
+        e.fillStyle = "#d63b2f";
+        for (let p of [[-6, -4], [6, -4], [0, 7]]) {
+          e.beginPath();
+          e.arc(p[0], p[1], 4, 0, 6.28);
+          e.fill();
+        }
+      }
+      e.restore();
+    }
+    for (let c of g.conf) {
+      let x = c.wx - sc;
+      e.save();
+      e.globalAlpha = Math.max(0, 1 - Math.pow(c.t / 2.8, 3));
+      e.translate(x, c.y);
+      e.rotate(c.rot);
+      e.fillStyle = c.c;
+      e.fillRect(-5, -3, 10, 6 * Math.abs(Math.cos(c.rot * 2)) + 1);
+      e.restore();
+    }
+    if (g.bird) {
+      let x = g.bird.sx,
+        y = P + trOff(sc + x) - 22,
+        ph = t.time * 22;
+      e.save();
+      e.translate(x, y);
+      e.lineWidth = 3;
+      e.strokeStyle = "rgba(20,0,30,0.85)";
+      e.beginPath();
+      e.moveTo(-6, 16);
+      e.lineTo(-10 + Math.sin(ph) * 8, 34);
+      e.moveTo(8, 16);
+      e.lineTo(12 - Math.sin(ph) * 8, 34);
+      e.stroke();
+      e.fillStyle = "#fff";
+      e.beginPath();
+      e.ellipse(0, 0, 26, 20, 0, 0, 6.28);
+      e.fill();
+      e.stroke();
+      e.beginPath();
+      e.arc(24, -16, 11, 0, 6.28);
+      e.fill();
+      e.stroke();
+      e.fillStyle = "#e53935";
+      e.beginPath();
+      e.arc(24, -28, 5, 0, 6.28);
+      e.arc(30, -26, 4, 0, 6.28);
+      e.fill();
+      e.fillStyle = "#ffb300";
+      e.beginPath();
+      e.moveTo(34, -17);
+      e.lineTo(44, -13);
+      e.lineTo(34, -10);
+      e.closePath();
+      e.fill();
+      e.fillStyle = "#111";
+      e.beginPath();
+      e.arc(27, -19, 2, 0, 6.28);
+      e.fill();
+      e.restore();
+    }
+  }
   function trWeather(e, t) {
     if (!GT.on || !GT.ter) return;
     let wx = GT.scroll + M / 2,
@@ -2150,6 +2426,7 @@
     ((n.hp -= t),
       (n.flash = 0.12),
       gt(e, t, n.x, n.y - n.h * 0.5),
+      gagBonk(e, n),
       n.hp <= 0 && Pn(e, n));
   }
   function ve(e, n, t, a) {
@@ -2939,6 +3216,7 @@
       (e.tick++,
       (e.time += t),
       trSync(e, t),
+      gagTick(e, t),
       (t *= mn),
       skTick(e, t),
       (e.intent = (o = n.intent) != null ? o : e.intent),
@@ -7499,13 +7777,15 @@
     Vn(e, t);
     let s = t.monsters.slice().sort((u, c) => u.y + u.h - (c.y + c.h));
     for (let u of s) na(e, n, u, t.player.x);
+    gagHats(e, t);
     ((t.phase !== "dead" || Math.floor(t.time * 10) % 2 === 0) && trDrawPlayer(e, n, t),
       oa(e, n, t),
       _n(e, t, n),
       ra(e, n, t),
       ia(e, n, t),
       skDraw(e, t),
-      trWeather(e, t));
+      trWeather(e, t),
+      gagDraw(e, t));
     for (let u of t.floaters) {
       (e.save(),
         (e.globalAlpha = Math.max(0, 1 - Math.pow(u.t / u.life, 2))),
