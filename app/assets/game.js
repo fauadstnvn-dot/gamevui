@@ -3212,6 +3212,38 @@
         sk: f.sk,
       });
   }
+  function gvMouthDrop(e, boss) {
+    let pool = (e.plan.monsters || []).filter((d) => !d.ranged);
+    if (!pool.length || e.monsters.length > 12) return;
+    let want = Math.min(pool.length, e.rng.int(2, 5)),
+      picks = pool.slice().sort(() => e.rng.next() - 0.5).slice(0, want);
+    picks.forEach((def, i) => {
+      Ae(e, def, !1, 0);
+      let o = e.monsters[e.monsters.length - 1],
+        grow = e.rng.range(2, 3),
+        dmgMul = 1 + e.rng.range(0.1, 0.2),
+        fh = o.h * grow,
+        fw = o.w * grow,
+        bx = boss.x - 40 + e.rng.range(-20, 20),
+        by = boss.y + 30,
+        tx = Math.max(110, Math.min(M - 90, e.player.x + e.rng.range(80, 560) + i * 40));
+      o.dmgMul = dmgMul;
+      o.hp = o.maxHp = Math.round(o.maxHp * (1 + (grow - 1) * 0.4));
+      o.fallH = fh;
+      o.baseY = P - fh / 2 + 10;
+      o.state = "drop";
+      o.ambushed = !0;
+      o.drop = { t: -i * 0.18, dur: e.rng.range(0.9, 1.3), x0: bx, y0: by, x1: tx, fw: fw, fh: fh };
+      o.x = bx;
+      o.y = by;
+      o.w = fw * 0.18;
+      o.h = fh * 0.18;
+    });
+    A(e, "ring", boss.x - 40, boss.y + 30, 140, 0.45);
+    A(e, "boom", boss.x - 40, boss.y + 30, 120, 0.4);
+    H(e, T(e.lang, "Boss nh\u1EA3 qu\xE1i!", "Boss spits monsters!"), T(e.lang, `${want} qu\xE1i \u0111ang r\u01A1i xu\u1ED1ng`, `${want} monsters falling`), 1.4);
+    he(e, T(e.lang, "NH\u1EA2!", "SPIT!"), boss.x - 40, boss.y - 20, "#fca5a5", 30, 1);
+  }
   function gvMark(e, o, n0) {
     if (o.blessed) for (let i = n0; i < e.fireballs.length; i++) e.fireballs[i].blessed = !0;
   }
@@ -3231,6 +3263,11 @@
         H(e, T(e.lang, "Boss ban ph\u00FAc cho qu\u00E1i!", "Boss blesses the monsters!"), T(e.lang, "Nhanh h\u01A1n, \u0111\u00E1nh \u0111au h\u01A1n, h\u1ED3i m\u00E1u", "Faster, stronger, regenerating"));
       }
     } else e.blessT = 0;
+    if (e.phase === "play" && e.sun && e.sun.hp > 0) {
+      let gvS = e.sun;
+      (gvS.spitT > 0 && !(gvS.gvPrevSpit > 0) && gvMouthDrop(e, gvS));
+      gvS.gvPrevSpit = gvS.spitT;
+    }
     let gvN0 = 0,
       gvB = (e.blessT || 0) > 0,
       gvBm = gvB ? 1.6 : 1;
@@ -3238,6 +3275,36 @@
       ((o.blessed = gvB), gvB && (o.blessLabel = T(e.lang, "PH\u00DAC", "BLESSED")));
       ((o.age += n), (o.flash = Math.max(0, o.flash - n)), (o.cooldown -= n * gvBm), (o.shieldFx = Math.max(0, (o.shieldFx || 0) - n)), (o.regen || gvB) && o.hp < o.maxHp && (o.hp = Math.min(o.maxHp, o.hp + o.maxHp * (gvB ? 0.1 : 0.04) * n)));
       gvB && ((o.blessFx = (o.blessFx || 0) - n) <= 0) && ((o.blessFx = 0.6), A(e, "ring", o.x, o.y, o.h * 0.9, 0.4));
+      if (o.state === "drop") {
+        let z = o.drop;
+        z.t += n;
+        let q = Math.min(1, z.t / z.dur),
+          sc = 0.18 + 0.82 * Math.min(1, q * 1.15);
+        o.w = z.fw * sc;
+        o.h = z.fh * sc;
+        o.x = z.x0 + (z.x1 - z.x0) * q - a * 0.3 * z.t;
+        o.y = z.y0 + (o.baseY - z.y0) * q * q;
+        z.fx = (z.fx || 0) + n;
+        if (z.t > 0 && z.fx > 0.06) {
+          z.fx = 0;
+          A(e, "ring", o.x, o.y, o.w * 0.9, 0.3);
+        }
+        if (q >= 1) {
+          o.w = z.fw;
+          o.h = z.fh;
+          o.y = o.baseY;
+          o.state = "move";
+          o.drop = null;
+          o.cooldown = e.rng.range(0.5, 1.1);
+          e.shake = Math.max(e.shake, 0.3);
+          A(e, "boom", o.x, P - 10, o.w * 1.2, 0.4);
+          A(e, "ring", o.x, P + 4, o.w * 1.3, 0.5);
+          A(e, "boom", o.x - o.w * 0.4, P - 6, o.w * 0.8, 0.35);
+          A(e, "boom", o.x + o.w * 0.4, P - 6, o.w * 0.8, 0.35);
+          he(e, T(e.lang, "RƠI!", "SLAM!"), o.x, o.y - o.h * 0.6, "#fde68a", 26, 0.8);
+        }
+        continue;
+      }
       if (o.burrow) {
         let b = o.burrow;
         ((b.t += n), (o.x -= a * 0.55 * n), (o.hp = Math.min(b.target, o.hp + b.rate * n)));
@@ -3500,9 +3567,9 @@
     }
     for (let s of e.monsters)
       if (
-        !s.burrow && (s.state !== "attack" && s.def.kind === "fly" && s.state, Mn(a, Ee(s)))
+        !s.burrow && s.state !== "drop" && (s.state !== "attack" && s.def.kind === "fly" && s.state, Mn(a, Ee(s)))
       ) {
-        let o = (s.elite ? 20 : 12) * (s.blessed ? 1.5 : 1);
+        let o = (s.elite ? 20 : 12) * (s.blessed ? 1.5 : 1) * (s.dmgMul || 1);
         a0Hit(e, s);
         Me(e, o, s.def.id);
       }
