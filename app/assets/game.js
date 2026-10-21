@@ -1092,6 +1092,7 @@
       i = oe(Math.round((u = n.duration) != null ? u : 60), un, cn),
       r = (c = n.outcome) != null ? c : "natural",
       s = ((h = n.sceneries) != null ? h : []).filter((d) => a.has(d));
+    r === "random" && (r = Z(ye(t, 777013)).next() < 0.75 ? "win" : "lose");
     if (!s.length && r !== "natural") {
       let d = oe(Math.round(i / 30), 1, 6);
       s = Z(ye(t, 5150))
@@ -1157,18 +1158,20 @@
       o = Math.max(3, s - r),
       l = oe((e.time - r) / o, 0, 1),
       u = i ? n.style.sunEnd : 0,
-      c = 1 - (1 - u) * l,
+      w = l * l * (3 - 2 * l),
+      c = 1 - (1 - u) * (l * 0.65 + w * 0.35 + 0.018 * Math.sin(l * 18.85 + e.stage * 1.7) * Math.sin(Math.PI * l)),
       h = e.sun,
       m = h.hp / h.maxHp,
       d = e.time >= s && !i;
-    n.sunScale = d ? 14 : oe(1 + 9 * (m - c), 0.08, 12);
+    n.sunScale = d ? 14 : n.sunScale + (oe(1 + 5 * (m - c), 0.3, 4) - n.sunScale) * 0.08;
     let k = i ? u * h.maxHp : 1;
     if (
-      ((n.sunFloor = d ? 0 : Math.max(k, (c - 0.03) * h.maxHp)),
+      ((n.sunFloor = d ? 0 : Math.max(k, (c - 0.06) * h.maxHp)),
       (n.sunKillNow = !i && e.time > s + 2.5),
       (n.playerKillNow = i && e.time >= s),
       (n.fail = 0),
       (n.noHeal = !1),
+      (n.playerFloor = null),
       (n.hurtMult = 0.7),
       a && (i || n.style.id === "clutch"))
     ) {
@@ -1176,9 +1179,11 @@
       if (e.time >= g) {
         n.hpRef == null && (n.hpRef = e.player.hp);
         let y = oe((e.time - g) / Math.max(1, s - g), 0, 1),
-          S = n.hpRef + (n.style.playerEndHp - n.hpRef) * y,
+          S = n.hpRef + (n.style.playerEndHp - n.hpRef) * (y * 0.6 + y * y * (3 - 2 * y) * 0.4) + 3 * Math.sin(y * 21 + 1.3) * Math.sin(Math.PI * y),
           f = e.player.hp - S;
-        ((n.fail = oe(f / 25, 0, 1) * (i ? 1 : 0.7)),
+        ((n.playerFloor = Math.max(1, S)),
+          e.phase === "play" && e.player.hp > S + 0.5 && S >= 1 && (e.player.hp += (S - e.player.hp) * 0.03),
+          (n.fail = oe(f / 25, 0, 1) * (i ? 1 : 0.7)),
           (n.hurtMult = f > 2 ? 2.5 : 0.35),
           (n.noHeal = !0));
       }
@@ -1775,7 +1780,7 @@
     else if (
       s &&
       ((n = Math.max(1, Math.round(n * r.hurtMult))),
-      (n = Math.min(n, Math.max(0, Math.round(i.hp) - 6))),
+      (n = Math.min(n, Math.max(0, Math.round(i.hp) - (r.playerFloor != null ? Math.round(r.playerFloor) : 6)))),
       n <= 0)
     )
       return;
