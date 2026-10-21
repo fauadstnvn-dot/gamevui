@@ -3113,6 +3113,59 @@
         break;
     }
   }
+  var gvRT = 1,
+    gvElemColor = {
+      lightning: "200,170,255",
+      fire: "255,140,60",
+      ice: "140,210,255",
+      water: "90,170,255",
+      poison: "140,230,90",
+      wind: "190,240,220",
+      earth: "200,160,90",
+      dark: "170,110,230",
+      light: "255,240,170",
+    };
+  function gvFireRanged(e, o) {
+    let d = o.def.ranged,
+      p = e.player,
+      k = o.h / d.size[1],
+      s = (p.x < o.x ? 1 : -1) * ta(o.def),
+      x = o.x + s * ((d.emitter[0] / d.size[0] - 0.5) * ((d.size[0] * o.h) / d.size[1])),
+      y = o.y + o.h / 2 - 8 - o.h * (1 - d.emitter[1] / d.size[1]),
+      a = Math.atan2(p.y - 70 - y, p.x - x),
+      v = 520 + e.stage * 25;
+    e.fireballs.push(
+      L(
+        { reflected: !1, age: 0, kind: "fire", deb: o.deb },
+        {
+          x,
+          y,
+          vx: Math.cos(a) * v,
+          vy: Math.sin(a) * v,
+          r: Math.max(14, d.projectileSize[1] * k * 0.3),
+          color: gvElemColor[d.element] || "255,150,60",
+          dmg: 14,
+          spr: d,
+          sk: k,
+        },
+      ),
+    );
+    A(e, "ring", x, y, o.h * 0.5, 0.3);
+  }
+  function gvImpact(e, f, x, y) {
+    f.spr.impact.length &&
+      e.effects.push({
+        kind: "spr",
+        x,
+        y,
+        t: 0,
+        life: f.spr.impact.length / 12,
+        size: 0,
+        variant: 0,
+        spr: f.spr,
+        sk: f.sk,
+      });
+  }
   function qe(e, n) {
     var i, r, s;
     let t = e.player,
@@ -3121,7 +3174,14 @@
       ((o.age += n), (o.flash = Math.max(0, o.flash - n)), (o.cooldown -= n), (o.shieldFx = Math.max(0, (o.shieldFx || 0) - n)), o.regen && o.hp < o.maxHp && (o.hp = Math.min(o.maxHp, o.hp + o.maxHp * 0.04 * n)));
       let l = t.x - o.x;
       if (o.state === "attack") {
-        if (((o.stateT -= n), wt[o.def.id])) o.x -= (a * 0.6 + o.ownVx) * n;
+        if (((o.stateT -= n), o.def.ranged)) {
+          o.x -= (a * 0.55 + o.ownVx * 0.5) * n;
+          o.def.kind === "fly" &&
+            (o.y = o.baseY + Math.sin(o.age * 2.2 + o.phase) * 38);
+          !o.dmgDone &&
+            o.stateT <= gvRT * 0.4 &&
+            ((o.dmgDone = !0), gvFireRanged(e, o));
+        } else if (wt[o.def.id]) o.x -= (a * 0.6 + o.ownVx) * n;
         else if (o.def.kind === "walk") o.x -= (a + o.ownVx + 260) * n;
         else {
           o.x -= (a + o.ownVx + 160) * n;
@@ -3138,16 +3198,17 @@
             ? (o.y = o.baseY + Math.sin(o.age * 2.2 + o.phase) * 38)
             : (o.y = o.baseY + Math.abs(Math.sin(o.age * 6 + o.phase)) * -4),
           o.cooldown <= 0 &&
-            l > -80 &&
-            l < 560 &&
+            (o.def.ranged ? l < -140 && o.x < M - 50 : l > -80 && l < 560) &&
             ((o.state = "attack"),
-            (o.stateT = o.def.attack.length ? 0.8 : 0.6),
+            (o.stateT = o.def.ranged ? gvRT : o.def.attack.length ? 0.8 : 0.6),
             (o.age = 0),
             (o.dmgDone = !1),
-            (e.shake = Math.max(e.shake, 0.2)),
-            A(e, "ring", o.x, o.y, o.h * 1.1, 0.45),
-            o.def.kind === "walk" && A(e, "ring", o.x, P + 4, o.w * 1.2, 0.5),
-            Dn(e, o)));
+            o.def.ranged
+              ? A(e, "ring", o.x, o.y, o.h * 0.8, 0.4)
+              : ((e.shake = Math.max(e.shake, 0.2)),
+                A(e, "ring", o.x, o.y, o.h * 1.1, 0.45),
+                o.def.kind === "walk" && A(e, "ring", o.x, P + 4, o.w * 1.2, 0.5),
+                Dn(e, o))));
       o.x < -o.w && (e.monsters = e.monsters.filter((u) => u !== o));
     }
     for (let o of e.bullets.slice())
@@ -3209,6 +3270,7 @@
         }
         if (!o.reflected && o.age >= 0 && o.y > P + 10) {
           (A(e, "boom", o.x, P, 70, 0.25),
+            o.spr && gvImpact(e, o, o.x, P - 20),
             (e.fireballs = e.fireballs.filter((l) => l !== o)));
           continue;
         }
@@ -3373,6 +3435,7 @@
           t.invuln <= 0 &&
             t.haloT <= 0 &&
             (A(e, "boom", s.x, s.y, 110, 0.35),
+            s.spr && gvImpact(e, s, s.x, s.y),
             pt(
               e,
               t.x,
@@ -3989,7 +4052,7 @@
     soul: "90,255,150",
     missile: "255,80,80",
   };
-  function _n(e, n) {
+  function _n(e, n, gvAssets) {
     var t, a, i;
     for (let r of n.fireballs) {
       if (r.age < 0) {
@@ -4013,6 +4076,26 @@
             ? i
             : Pt.fire,
         o = Math.hypot(r.vx, r.vy) || 1;
+      if (r.spr) {
+        let d = r.spr,
+          im = G(gvAssets, d.projectile[Math.floor(r.age * 14) % d.projectile.length]);
+        if (im) {
+          let k = r.sk,
+            ph = Math.atan2(r.vy, r.vx) - (d.direction === "left" ? Math.PI : 0);
+          (e.translate(r.x, r.y),
+            e.rotate(ph),
+            Math.cos(ph) < 0 && e.scale(1, -1),
+            e.drawImage(
+              im,
+              -d.projectileAnchor[0] * k,
+              -d.projectileAnchor[1] * k,
+              d.projectileSize[0] * k,
+              d.projectileSize[1] * k,
+            ));
+        }
+        e.restore();
+        continue;
+      }
       if (r.shape === "pillar") {
         let u =
             230 *
@@ -4248,18 +4331,22 @@
   }
   function na(e, n, t, a) {
     let i = t.state === "attack",
+      gvRg = t.def.ranged,
       r = t.def.attack.length > 0,
-      s = i && r ? t.def.attack : t.def.frames,
+      s = i && gvRg ? gvRg.frames : i && r ? t.def.attack : t.def.frames,
       o = i ? 9 : 8,
-      l = s[Math.floor(t.age * o) % s.length],
+      l =
+        i && gvRg
+          ? s[Math.min(s.length - 1, Math.floor(Math.max(0, Math.min(0.999, 1 - t.stateT / gvRT)) * s.length))]
+          : s[Math.floor(t.age * o) % s.length],
       u = G(n, l);
     if (!u) return;
     let c = (u.naturalWidth * t.h) / u.naturalHeight,
       h = a < t.x ? 1 : -1,
       m = -h,
-      d = r ? 0.8 : 0.6,
+      d = gvRg ? gvRT : r ? 0.8 : 0.6,
       k = i ? Math.min(1, Math.max(0, 1 - t.stateT / d)) : 0,
-      g = !i && t.cooldown < 0.45 && t.cooldown > -1 && Math.abs(a - t.x) < 330,
+      g = !i && t.cooldown < 0.45 && t.cooldown > -1 && Math.abs(a - t.x) < (gvRg ? 900 : 330),
       y = 0.5 + 0.5 * Math.sin(t.age * 28),
       S = t.y + t.h / 2 - 8 - t.h / 2;
     if (g) {
@@ -4330,7 +4417,7 @@
     }
     if (
       (f(0, 1, p, w, g ? `brightness(${1.1 + y * 0.5}) saturate(1.4)` : void 0),
-      i)
+      i && !gvRg)
     ) {
       let b = Math.sin(k * Math.PI),
         x = t.def.kind === "fly",
@@ -4594,6 +4681,22 @@
             let h = o.size * (0.7 + l * 0.5),
               m = (c.naturalHeight * h) / c.naturalWidth;
             e.drawImage(c, o.x - h / 2, o.y - m / 2, h, m);
+          }
+          break;
+        }
+        case "spr": {
+          let u = o.spr,
+            h = G(n, u.impact[Math.min(u.impact.length - 1, Math.floor(l * u.impact.length))]);
+          if (h) {
+            let k = o.sk * 1.4;
+            ((e.globalAlpha = Math.min(1, (1 - l) * 2.5)),
+              e.drawImage(
+                h,
+                o.x - u.impactAnchor[0] * k,
+                o.y - u.impactAnchor[1] * k,
+                u.impactSize[0] * k,
+                u.impactSize[1] * k,
+              ));
           }
           break;
         }
@@ -6834,7 +6937,7 @@
     for (let u of s) na(e, n, u, t.player.x);
     ((t.phase !== "dead" || Math.floor(t.time * 10) % 2 === 0) && aa(e, n, t),
       oa(e, n, t),
-      _n(e, t),
+      _n(e, t, n),
       ra(e, n, t),
       ia(e, n, t),
       skDraw(e, t));
@@ -6982,7 +7085,11 @@
     return Object.values(e.layers).map((n) => n.src);
   }
   function ua(e) {
-    return [...e.frames, ...e.attack];
+    return [
+      ...e.frames,
+      ...e.attack,
+      ...(e.ranged ? [...e.ranged.frames, ...e.ranged.projectile, ...e.ranged.impact] : []),
+    ];
   }
   function At(e) {
     return [
