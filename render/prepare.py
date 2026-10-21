@@ -19,7 +19,9 @@ def manifest_paths(kind: str, entry: dict) -> list[str]:
         return [layer["src"] for layer in entry["layers"].values()]
     if kind == "mount":
         return [*entry["run"], entry["idle"], entry["up"], entry["down"]]
-    return [*entry["frames"], *entry.get("attack", [])]
+    ranged = entry.get("ranged") or {}
+    return [*entry["frames"], *entry.get("attack", []),
+            *ranged.get("frames", []), *ranged.get("projectile", []), *ranged.get("impact", [])]
 
 
 def webp_size(path: Path) -> list[int]:
@@ -93,9 +95,44 @@ def register_monster(ident: str, game: Path, manifest: dict) -> dict:
     rel = lambda f: f"monsters/{ident}/{f.name}"
     entry = {"id": ident, "kind": kind, "frames": [rel(f) for f in frames],
              "attack": [rel(f) for f in attack], "size": webp_size(frames[0])}
+    ranged = register_ranged(folder, ident, rel)
+    if ranged:
+        entry["ranged"] = ranged
     manifest.setdefault("monsters", []).append(entry)
-    print(f"  + đăng ký quái vật mới vào manifest: {ident} ({kind})")
+    print(f"  + đăng ký quái vật mới vào manifest: {ident} ({kind}{', tấn công từ xa' if ranged else ''})")
     return entry
+
+
+def pair(value, fallback: list[float]) -> list[float]:
+    ok = isinstance(value, (list, tuple)) and len(value) == 2 and all(isinstance(v, (int, float)) for v in value)
+    return [float(value[0]), float(value[1])] if ok else fallback
+
+
+def register_ranged(folder: Path, ident: str, rel) -> dict | None:
+    """Quái từ xa: ranged-N (tung chiêu) + projectile-N (đạn) + impact-N (nổ), kèm ranged_info từ meta.json."""
+    frames, shots, hits = (numbered(folder, p) for p in ("ranged", "projectile", "impact"))
+    if not (frames and shots):
+        return None
+    meta_file = folder / "meta.json"
+    info = json.loads(meta_file.read_text(encoding="utf-8")).get("ranged_info", {}) if meta_file.is_file() else {}
+    frame_size = webp_size(frames[0])
+    shot_size = webp_size(shots[0])
+    hit_size = webp_size(hits[0]) if hits else [0, 0]
+    shot_wh = pair(info.get("projectile_size"), [float(v) for v in shot_size])
+    hit_wh = pair(info.get("impact_size"), [float(v) for v in hit_size])
+    return {
+        "frames": [rel(f) for f in frames],
+        "projectile": [rel(f) for f in shots],
+        "impact": [rel(f) for f in hits],
+        "size": frame_size,
+        "direction": "left" if info.get("direction") == "left" else "right",
+        "emitter": pair(info.get("emitter"), [frame_size[0] * 0.5, frame_size[1] * 0.5]),
+        "projectileSize": shot_wh,
+        "projectileAnchor": pair(info.get("projectile_anchor"), [shot_wh[0] / 2, shot_wh[1] / 2]),
+        "impactSize": hit_wh,
+        "impactAnchor": pair(info.get("impact_anchor"), [hit_wh[0] / 2, hit_wh[1] / 2]),
+        "element": str(info.get("element", "")),
+    }
 
 
 REGISTER = {"sceneries": register_scenery, "mounts": register_mount, "monsters": register_monster}
