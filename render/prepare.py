@@ -135,6 +135,29 @@ def register_ranged(folder: Path, ident: str, rel) -> dict | None:
     }
 
 
+BOSS_MOODS = ["happy", "calm", "annoyed", "irritated", "enraged", "furious", "evil"]
+
+
+def register_boss(ident: str, game: Path, manifest: dict) -> dict:
+    """Boss mới: bosses/<id>-<mood>.webp (7 mood) + bosses/<id>-spit.webp. Thiếu mood thì dùng mood gần nhất."""
+    folder = game / "bosses"
+    have = {m: folder / f"{ident}-{m}.webp" for m in BOSS_MOODS if (folder / f"{ident}-{m}.webp").is_file()}
+    spit = folder / f"{ident}-spit.webp"
+    if len(have) < 3 or not spit.is_file():
+        raise RuntimeError("boss mới cần tối thiểu 3 mood và ảnh spit")
+    moods, last = [], None
+    for m in BOSS_MOODS:
+        last = m if m in have else last
+        moods.append(m if m in have else last)
+    first = next(m for m in BOSS_MOODS if m in have)
+    moods = [m if m else first for m in moods]
+    entry = {"id": ident, "label": ident.replace("-", " ").title(),
+             "moods": [f"bosses/{ident}-{m}.webp" for m in moods], "spit": f"bosses/{ident}-spit.webp"}
+    manifest["bosses"] = [b for b in manifest.get("bosses", []) if b.get("id") != ident] + [entry]
+    print(f"  + đăng ký boss mới vào manifest: {ident}")
+    return entry
+
+
 REGISTER = {"sceneries": register_scenery, "mounts": register_mount, "monsters": register_monster}
 
 
@@ -150,6 +173,7 @@ def try_pick(client: HostClient, kind: str, files: list[str], rng: random.Random
         try:
             client.fetch_into(kind, f, game)
             if kind == "boss":
+                register_boss(ident, game, manifest)
                 ok = True
             else:
                 if ident not in entries:
