@@ -834,8 +834,7 @@
           ["beam", "pincer", "rain"],
           ["nova", "sweep", "beam", "meteor"],
         ],
-      }),
-    ],
+      }),    ],
     Pe = "random";
   function X(e) {
     var n;
@@ -923,6 +922,22 @@
     (Ce.clear(), Ne.clear());
     for (let a = F.length - 1; a >= 0; a--)
       F[a].id.startsWith("u-") && F.splice(a, 1);
+    for (let a of (t = e.bosses) != null ? t : [])
+      F.some((i) => i.id === a.id) ||
+        F.push({
+          id: a.id,
+          label: a.label || a.id,
+          moods: a.moods,
+          spit: a.spit,
+          glow: [255, 160, 60],
+          boltStyle: "lightning",
+          orbKind: "fire",
+          pools: [
+            ["bolt", "bolt", "spit"],
+            ["barrage", "orbs"],
+            ["nova", "sweep", "barrage"],
+          ],
+        });
     for (let a of n) {
       Ne.set(a.id, { vi: a.name, en: (t = a.nameEn) != null ? t : a.name });
       for (let i of a.files)
