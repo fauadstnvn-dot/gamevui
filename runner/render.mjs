@@ -220,6 +220,8 @@ await page.evaluate(
   },
 )
 
+await page.evaluate((ids) => { window.__gvMouthIds = ids }, (plan.mouthMonsters ?? []).map(stem))
+
 for (const box of ['#sceneries', '#monsters']) {
   const names = await page.$$eval(`${box} button.chip`, (b) => b.map((x) => x.querySelector('span').textContent))
   const wanted = box === '#sceneries' ? [stem(plan.scenery)] : plan.monsters.map(stem)
@@ -265,6 +267,7 @@ const meta = {
   mount: plan.mount,
   boss: plan.boss,
   monsters: plan.monsters,
+  mouthMonsters: plan.mouthMonsters ?? [],
   file: finalName,
   music: plan.musicFile ? path.basename(plan.musicFile) : null,
 }
