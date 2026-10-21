@@ -3129,7 +3129,7 @@
     let d = o.def.ranged,
       p = e.player,
       k = o.h / d.size[1],
-      s = (p.x < o.x ? 1 : -1) * ta(o.def),
+      s = (p.x < o.x ? 1 : -1) * (d.direction === "right" ? -1 : 1),
       x = o.x + s * ((d.emitter[0] / d.size[0] - 0.5) * ((d.size[0] * o.h) / d.size[1])),
       y = o.y + o.h / 2 - 8 - o.h * (1 - d.emitter[1] / d.size[1]),
       a = Math.atan2(p.y - 70 - y, p.x - x),
@@ -4397,7 +4397,7 @@
           (e.globalAlpha = x),
           B ? (e.filter = B) : t.flash > 0 && (e.filter = "brightness(2.2)"),
           t.elite && !B && ((e.shadowColor = "#ffcf33"), (e.shadowBlur = 24)),
-          e.scale(h * ta(t.def) * $, I),
+          e.scale(h * (i && gvRg ? (gvRg.direction === "right" ? -1 : 1) : ta(t.def)) * $, I),
           e.drawImage(u, -c / 2, -t.h, c, t.h),
           e.restore());
       },
