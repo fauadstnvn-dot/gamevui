@@ -170,8 +170,30 @@ def _delete_scenario(self, scenario_id: str) -> None:
         raise RuntimeError(body.get("error", "host từ chối xóa kịch bản"))
 
 
+FACING_FOLDER = "huong-quai"
+
+
+def _facings(self) -> dict[str, str]:
+    """Hướng nhìn sprite gốc của quái vật {id: 'left'|'right'} do tab "Hướng quái vật" trên host quyết định.
+
+    Lỗi/không có dữ liệu thì trả về {} và game tự dùng danh sách dự phòng cũ.
+    """
+    raw: dict = {}
+    try:
+        if self.is_local:
+            p = Path(self.host) / FACING_FOLDER / "facing.json"
+            monsters = json.loads(p.read_text(encoding="utf-8")).get("monsters", {}) if p.is_file() else {}
+            raw = {k: v.get("facing") for k, v in monsters.items() if isinstance(v, dict)}
+        else:
+            raw = json.loads(self._request(f"{self.host}/api.php?action=facings")).get("facings", {})
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ! không đọc được hướng quái vật từ host (dùng dự phòng trong game): {exc}")
+    return {k: v for k, v in raw.items() if isinstance(k, str) and v in ("left", "right")}
+
+
 HostClient.scenarios = _scenarios
 HostClient.delete_scenario = _delete_scenario
+HostClient.facings = _facings
 
 
 def safe_extract(zip_path: Path, game_dir: Path) -> list[str]:
