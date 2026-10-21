@@ -1568,13 +1568,14 @@
       r = n != null ? n : i.pick(e.plan.monsters),
       s =
         (r.kind === "walk" ? i.range(150, 200) : i.range(120, 170)) *
-        (t ? 1.5 : 1),
+        (t ? 1.5 : 1) *
+        (1 + Math.min(10, e.player.gun | 0) * 0.04),
       o = s / r.size[1],
       l = r.size[0] * o,
       u = s,
       c = r.kind === "walk" ? P - u / 2 + 10 : i.range(250, P - 190),
       h = (1 + e.stage * 0.28) * (1 + Math.min(9, e.player.gun | 0) * (e.director && e.director.scenario.outcome !== "natural" ? 0.12 : 0.3)) * (1 + 0.35 * (e.gvP || 0)),
-      m = Math.round((14 + u * 0.12) * h * (t ? 4.2 : 1)),
+      m = Math.round((14 + u * 0.12) * h * (t ? 4.2 : 1) * 2.5 * (1 + (e.player.gun | 0) * 0.15)),
       gvR = i.next(),
       gvDeb = gvR < Math.min(0.5, 0.15 + e.stage * 0.06 + (e.player.gun | 0) * 0.02 + Math.max(0, e.gvP || 0) * 0.2) ? i.pick(["slow", "jam", "curse"]) : null;
     e.monsters.push({
@@ -1853,7 +1854,7 @@
       he(e, T(e.lang, "KHI\u00CAN", "SHIELD"), n.x, n.y - n.h * 0.6, "#7dd3fc", 26, 0.7);
       return;
     }
-    t = Math.min(t, Math.max(8, Math.ceil(n.maxHp * (n.elite ? 0.25 : 0.45))));
+    t = Math.min(t, Math.max(8, Math.ceil(n.maxHp * (n.elite ? 0.12 : 0.2))));
     ((n.hp -= t),
       (n.flash = 0.12),
       gt(e, t, n.x, n.y - n.h * 0.5),
@@ -3166,25 +3167,45 @@
         sk: f.sk,
       });
   }
+  function gvMark(e, o, n0) {
+    if (o.blessed) for (let i = n0; i < e.fireballs.length; i++) e.fireballs[i].blessed = !0;
+  }
   function qe(e, n) {
     var i, r, s;
     let t = e.player,
       a = e.speed;
+    if (e.phase === "play" && e.sun && e.sun.hp > 0) {
+      e.blessSun !== e.sun && ((e.blessSun = e.sun), (e.blessCount = 0), (e.blessCd = 10 + e.rng.range(0, 6)), (e.blessT = 0));
+      e.blessT = Math.max(0, (e.blessT || 0) - n);
+      e.blessCd -= n;
+      if (e.blessCount < 2 && e.blessCd <= 0 && e.blessT <= 0 && e.monsters.length > 0) {
+        e.blessT = 6;
+        e.blessCount++;
+        e.blessCd = e.rng.range(25, 35);
+        A(e, "sunBurst", e.sun.x, e.sun.y, 360, 0.6);
+        H(e, T(e.lang, "Boss ban ph\u00FAc cho qu\u00E1i!", "Boss blesses the monsters!"), T(e.lang, "Nhanh h\u01A1n, \u0111\u00E1nh \u0111au h\u01A1n, h\u1ED3i m\u00E1u", "Faster, stronger, regenerating"));
+      }
+    } else e.blessT = 0;
+    let gvN0 = 0,
+      gvB = (e.blessT || 0) > 0,
+      gvBm = gvB ? 1.6 : 1;
     for (let o of e.monsters.slice()) {
-      ((o.age += n), (o.flash = Math.max(0, o.flash - n)), (o.cooldown -= n), (o.shieldFx = Math.max(0, (o.shieldFx || 0) - n)), o.regen && o.hp < o.maxHp && (o.hp = Math.min(o.maxHp, o.hp + o.maxHp * 0.04 * n)));
+      ((o.blessed = gvB), gvB && (o.blessLabel = T(e.lang, "PH\u00DAC", "BLESSED")));
+      ((o.age += n), (o.flash = Math.max(0, o.flash - n)), (o.cooldown -= n * gvBm), (o.shieldFx = Math.max(0, (o.shieldFx || 0) - n)), (o.regen || gvB) && o.hp < o.maxHp && (o.hp = Math.min(o.maxHp, o.hp + o.maxHp * (gvB ? 0.1 : 0.04) * n)));
+      gvB && ((o.blessFx = (o.blessFx || 0) - n) <= 0) && ((o.blessFx = 0.6), A(e, "ring", o.x, o.y, o.h * 0.9, 0.4));
       let l = t.x - o.x;
       if (o.state === "attack") {
         if (((o.stateT -= n), o.def.ranged)) {
-          o.x -= (a * 0.55 + o.ownVx * 0.5) * n;
+          o.x -= (a * 0.55 + o.ownVx * 0.5) * gvBm * n;
           o.def.kind === "fly" &&
             (o.y = o.baseY + Math.sin(o.age * 2.2 + o.phase) * 38);
           !o.dmgDone &&
             o.stateT <= gvRT * 0.4 &&
-            ((o.dmgDone = !0), gvFireRanged(e, o));
-        } else if (wt[o.def.id]) o.x -= (a * 0.6 + o.ownVx) * n;
-        else if (o.def.kind === "walk") o.x -= (a + o.ownVx + 260) * n;
+            ((o.dmgDone = !0), (gvN0 = e.fireballs.length), gvFireRanged(e, o), gvMark(e, o, gvN0));
+        } else if (wt[o.def.id]) o.x -= (a * 0.6 + o.ownVx) * gvBm * n;
+        else if (o.def.kind === "walk") o.x -= (a + (o.ownVx + 260) * gvBm) * n;
         else {
-          o.x -= (a + o.ownVx + 160) * n;
+          o.x -= (a + (o.ownVx + 160) * gvBm) * n;
           let u = t.y - 70;
           o.y += (u - o.y) * Math.min(1, n * 3);
         }
@@ -3193,7 +3214,7 @@
           (o.cooldown = e.rng.range(2, 3.5)),
           (o.dmgDone = !1));
       } else
-        ((o.x -= (a * 0.55 + o.ownVx) * n),
+        ((o.x -= (a * 0.55 + o.ownVx) * gvBm * n),
           o.def.kind === "fly"
             ? (o.y = o.baseY + Math.sin(o.age * 2.2 + o.phase) * 38)
             : (o.y = o.baseY + Math.abs(Math.sin(o.age * 6 + o.phase)) * -4),
@@ -3208,7 +3229,7 @@
               : ((e.shake = Math.max(e.shake, 0.2)),
                 A(e, "ring", o.x, o.y, o.h * 1.1, 0.45),
                 o.def.kind === "walk" && A(e, "ring", o.x, P + 4, o.w * 1.2, 0.5),
-                Dn(e, o))));
+                ((gvN0 = e.fireballs.length), Dn(e, o), gvMark(e, o, gvN0)))));
       o.x < -o.w && (e.monsters = e.monsters.filter((u) => u !== o));
     }
     for (let o of e.bullets.slice())
@@ -3376,7 +3397,7 @@
       if (
         (s.state !== "attack" && s.def.kind === "fly" && s.state, Mn(a, Ee(s)))
       ) {
-        let o = s.elite ? 20 : 12;
+        let o = (s.elite ? 20 : 12) * (s.blessed ? 1.5 : 1);
         a0Hit(e, s);
         Me(e, o, s.def.id);
       }
@@ -3447,7 +3468,7 @@
             gvDebuff(e, s.deb),
             Me(
               e,
-              (r = s.dmg) != null ? r : 16,
+              ((r = s.dmg) != null ? r : 16) * (s.blessed ? 1.5 : 1),
               T(e.lang, "\u0111\xF2n qu\xE1i", "monster attack"),
             ));
     }
@@ -4390,6 +4411,38 @@
           e.fill());
       }
       e.restore();
+    }
+    if (t.blessed) {
+      let gvT = t.age || 0,
+        gvP = 0.5 + 0.5 * Math.sin(gvT * 6),
+        gvX = t.x,
+        gvY2 = t.y + t.h / 2 - 8,
+        gvR2 = Math.max(t.h * 0.7, 50) * (1 + gvP * 0.08),
+        gvG2 = e.createRadialGradient(gvX, gvY2, gvR2 * 0.2, gvX, gvY2, gvR2);
+      (e.save(),
+        gvG2.addColorStop(0, "rgba(255,200,60,0)"),
+        gvG2.addColorStop(0.6, `rgba(255,170,40,${0.18 + gvP * 0.12})`),
+        gvG2.addColorStop(1, "rgba(190,60,255,0)"),
+        (e.fillStyle = gvG2),
+        e.beginPath(),
+        e.arc(gvX, gvY2, gvR2, 0, Math.PI * 2),
+        e.fill(),
+        (e.strokeStyle = `rgba(255,215,90,${0.5 + gvP * 0.3})`),
+        (e.lineWidth = 2),
+        (e.shadowColor = "#ffb020"),
+        (e.shadowBlur = 16),
+        e.beginPath(),
+        e.arc(gvX, gvY2, gvR2 * 0.92, 0, Math.PI * 2),
+        e.stroke(),
+        (e.shadowBlur = 0),
+        (e.font = "bold 15px sans-serif"),
+        (e.textAlign = "center"),
+        (e.lineWidth = 4),
+        (e.strokeStyle = "rgba(60,10,90,0.9)"),
+        (e.fillStyle = "#ffe27a"));
+      let gvLy = t.y - 10 - gvP * 4;
+      let gvTxt = `\u25B2 ${t.blessLabel || "BLESSED"} \u25B2`;
+      (e.strokeText(gvTxt, gvX, gvLy), e.fillText(gvTxt, gvX, gvLy), e.restore());
     }
     let f = (b, x, $, I, B) => {
         (e.save(),
