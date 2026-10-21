@@ -1214,12 +1214,15 @@
       t === 0 &&
         a &&
         (o = (d = e.sceneries.find((k) => k.id === a)) != null ? d : o);
-    let l =
-        i != null && i.length ? e.monsters.filter((k) => i.includes(k.id)) : [],
-      u = l.length ? l : e.monsters,
-      c = r.shuffle(u.slice()).slice(0, 7),
+    let gvIds = (typeof window !== "undefined" && window.__gvMouthIds) || [],
+      gvMouth = e.monsters.filter((k) => gvIds.includes(k.id) && !k.ranged),
+      gvMo = e.monsters.filter((k) => !gvIds.includes(k.id)),
+      l =
+        i != null && i.length ? gvMo.filter((k) => i.includes(k.id)) : [],
+      u = l.length ? l : gvMo.length ? gvMo : e.monsters,
+      c = r.shuffle(u.slice()).slice(0, l.length ? Math.min(10, l.length) : 7),
       h = r.shuffle(e.platforms.slice()).slice(0, 3);
-    return { scenery: o, monsters: c, platformSprites: h };
+    return { scenery: o, monsters: c, mouth: gvMouth, platformSprites: h };
   }
   function gn(e) {
     let n = e.pick(["balanced", "sniper", "collector", "daredevil"]),
@@ -3213,10 +3216,10 @@
       });
   }
   function gvMouthDrop(e, boss) {
-    let pool = (e.plan.monsters || []).filter((d) => !d.ranged);
+    let pool = e.plan.mouth && e.plan.mouth.length ? e.plan.mouth : (e.plan.monsters || []).filter((d) => !d.ranged);
     if (!pool.length || e.monsters.length > 12) return;
-    let want = Math.min(pool.length, e.rng.int(2, 5)),
-      picks = pool.slice().sort(() => e.rng.next() - 0.5).slice(0, want);
+    let want = e.rng.int(3, 5),
+      picks = Array.from({ length: want }, () => pool[Math.floor(e.rng.next() * pool.length)]);
     picks.forEach((def, i) => {
       Ae(e, def, !1, 0);
       let o = e.monsters[e.monsters.length - 1],
@@ -3265,7 +3268,7 @@
     } else e.blessT = 0;
     if (e.phase === "play" && e.sun && e.sun.hp > 0) {
       let gvS = e.sun;
-      (gvS.spitT > 0 && !(gvS.gvPrevSpit > 0) && gvMouthDrop(e, gvS));
+      (gvS.spitT > 0 && !(gvS.gvPrevSpit > 0) && e.rng.next() < 0.15 && gvMouthDrop(e, gvS));
       gvS.gvPrevSpit = gvS.spitT;
     }
     let gvN0 = 0,
@@ -7376,6 +7379,7 @@
     return [
       ...la(e.scenery),
       ...e.monsters.flatMap(ua),
+      ...(e.mouth || []).flatMap(ua),
       ...e.platformSprites.map((n) => n.src),
     ];
   }
