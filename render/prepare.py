@@ -68,13 +68,19 @@ def register_mount(ident: str, game: Path, manifest: dict) -> dict:
     """Thú cưỡi mới: rig/mounts/<id>/ gồm pose-idle, pose-jump-up, pose-jump-down và run-N."""
     folder = game / "rig" / "mounts" / ident
     run = numbered(folder, "run")
+    fly = False
+    if len(run) < 2:
+        run = numbered(folder, "fly")
+        fly = len(run) >= 2
     poses = {k: folder / f"pose-{n}.webp" for k, n in (("idle", "idle"), ("up", "jump-up"), ("down", "jump-down"))}
     missing = [f.name for f in poses.values() if not f.is_file()]
     if missing or len(run) < 2:
-        raise RuntimeError(f"thú cưỡi mới thiếu ảnh: {', '.join(missing) or 'cần tối thiểu 2 khung run-N'}")
+        raise RuntimeError(f"thú cưỡi mới thiếu ảnh: {', '.join(missing) or 'cần tối thiểu 2 khung run-N (hoặc fly-N cho thú bay)'}")
     rel = lambda f: f"rig/mounts/{ident}/{f.name}"
     entry = {"id": ident, "run": [rel(f) for f in run], "idle": rel(poses["idle"]),
              "up": rel(poses["up"]), "down": rel(poses["down"]), "size": webp_size(run[0])}
+    if fly:
+        entry["fly"] = True
     manifest.setdefault("mounts", []).append(entry)
     print(f"  + đăng ký thú cưỡi mới vào manifest: {ident}")
     return entry
