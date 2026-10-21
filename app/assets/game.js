@@ -3243,6 +3243,39 @@
         }
       }
       let l = t.x - o.x;
+      if (o.state === "move" && !o.ambushed && !o.def.ranged && o.cooldown <= 0 && l > 120 && l < 560 && e.rng.next() < 0.01) {
+        o.ambushed = !0;
+        o.state = "leap";
+        o.leap = { t: 0, dur: 0.9, x0: o.x, y0: o.y, x1: Math.max(o.w * 0.5 + 10, t.x - 140 - o.w * 0.4), arc: Math.max(260, o.h * 1.3) };
+        A(e, "ring", o.x, o.y, o.h * 1.1, 0.45);
+        he(e, T(e.lang, "\u0110\xC1NH L\xC9N!", "AMBUSH!"), o.x, o.y - o.h * 0.7, "#fca5a5", 30, 0.9);
+      }
+      if (o.state === "leap") {
+        let z = o.leap;
+        z.t += n;
+        let q0 = Math.min(1, z.t / z.dur);
+        o.x = z.x0 + (z.x1 - z.x0) * q0;
+        o.y = z.y0 + (o.baseY - z.y0) * q0 - Math.sin(Math.PI * q0) * z.arc;
+        if (q0 >= 1) {
+          o.state = "rear";
+          o.stateT = 1.5;
+          o.y = o.baseY;
+          o.dmgDone = !1;
+          e.shake = Math.max(e.shake, 0.3);
+          A(e, "ring", o.x, P + 4, o.w * 1.2, 0.5);
+        }
+        continue;
+      }
+      if (o.state === "rear") {
+        o.stateT -= n;
+        o.x += 340 * gvBm * n;
+        o.y = o.def.kind === "fly" ? o.baseY + Math.sin(o.age * 2.2 + o.phase) * 38 : o.baseY + Math.abs(Math.sin(o.age * 10)) * -6;
+        if (o.stateT <= 0 || o.x > t.x + 20) {
+          o.state = "move";
+          o.cooldown = 99;
+        }
+        continue;
+      }
       if (o.state === "attack") {
         if (((o.stateT -= n), o.def.ranged)) {
           o.x -= (a * 0.55 + o.ownVx * 0.5) * gvBm * n;
@@ -4666,14 +4699,18 @@
       e.ellipse(
         a.x,
         P + 6,
-        120 * (1 - Math.min(0.5, d / 400)),
+        120 * (r.fly ? 0.7 : 1) * (1 - Math.min(0.5, d / 400)),
         14,
         0,
         0,
         Math.PI * 2,
       ),
       e.fill());
-    let k = s ? 0 : Math.abs(Math.sin(a.runPhase * Math.PI)) * -6,
+    let k = s
+        ? 0
+        : r.fly
+          ? -20 + Math.sin(t.time * 3.2) * -7
+          : Math.abs(Math.sin(a.runPhase * Math.PI)) * -6,
       g = 360 / r.size[0],
       y = r.size[0] * g,
       S = r.size[1] * g,
