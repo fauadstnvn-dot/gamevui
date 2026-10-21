@@ -3278,7 +3278,7 @@
       if (o.state === "drop") {
         let z = o.drop;
         z.t += n;
-        let q = Math.min(1, z.t / z.dur),
+        let q = Math.max(0, Math.min(1, z.t / z.dur)),
           sc = 0.18 + 0.82 * Math.min(1, q * 1.15);
         o.w = z.fw * sc;
         o.h = z.fh * sc;
