@@ -13,10 +13,12 @@ import pymysql
 import requests
 
 from .metadata import generate
+from .shorts import build_short
 
 TABLE = "tb_bao_secret"
 MAX_NUM = 9
 TOKEN_URL = "https://oauth2.googleapis.com/token"
+COMMENT_URL = "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet"
 UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status"
 
 
@@ -178,6 +180,39 @@ def upload(access_token: str, mp4: Path, info: dict, privacy: str, category: str
     raise RuntimeError("Upload thất bại sau 3 lần thử")
 
 
+def fill_main_url(text: str, main_url: str) -> str:
+    return text.replace("{MAIN_URL}", main_url)
+
+
+def post_comment(access_token: str, video_id: str, text: str) -> bool:
+    """Bình luận đầu tiên dưới Short mời xem video chính (cần scope youtube.force-ssl; thiếu thì bỏ qua)."""
+    r = requests.post(COMMENT_URL, timeout=60, headers={"Authorization": f"Bearer {access_token}"}, json={
+        "snippet": {"videoId": video_id, "topLevelComment": {"snippet": {"textOriginal": text}}}})
+    if r.status_code in (200, 201):
+        return True
+    print(f"  ! Chưa đăng được bình luận kêu gọi ({r.status_code}): {r.text[:200]}")
+    return False
+
+
+def publish_short(row: dict, mp4: Path, meta: dict, info: dict, main_id: str, args) -> None:
+    """Dựng và đăng Short với cùng tài khoản; mọi lỗi chỉ cảnh báo, không làm hỏng video chính."""
+    main_url = f"https://youtu.be/{main_id}"
+    short_mp4 = mp4.with_name(mp4.stem + "-short.mp4")
+    try:
+        build_short(mp4, meta, info, short_mp4, Path(".work") / "short")
+        short_info = {
+            "title": f"{info['short_title']} #Shorts",
+            "description": fill_main_url(info["short_description"], main_url),
+            "tags": info["short_tags"],
+        }
+        token = valid_access_token(row)
+        short_id = upload(token, short_mp4, short_info, args.privacy, args.category, args.made_for_kids)
+        print(f"Đã upload Short: https://youtube.com/shorts/{short_id}")
+        post_comment(token, short_id, fill_main_url(info["comment"], main_url))
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ! Không đăng được Short (video chính đã lên): {exc}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default="output")
@@ -185,6 +220,7 @@ def main() -> None:
                     choices=["public", "unlisted", "private"])
     ap.add_argument("--category", default="20", help="20 = Gaming")
     ap.add_argument("--made-for-kids", action="store_true")
+    ap.add_argument("--no-short", action="store_true", help="Không dựng/đăng YouTube Short kèm theo")
     ap.add_argument("--dry-run", action="store_true", help="Chỉ tạo metadata, không upload / không đổi DB")
     args = ap.parse_args()
 
@@ -196,7 +232,7 @@ def main() -> None:
     mp4 = meta_path.with_suffix(".mp4")
 
     info = generate(meta)
-    print(f"Tiêu đề: {info['title']}\nTag: {', '.join(info['tags'])}")
+    print(f"Tiêu đề: {info['title']}\nTag: {', '.join(info['tags'])}\nShort: {info['short_title']}")
     meta_path.with_name(meta_path.stem + ".youtube.json").write_text(
         json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
     if args.dry_run:
@@ -211,6 +247,8 @@ def main() -> None:
             print(f"  ! bỏ qua tài khoản này: {exc}")
             continue
         print(f"Đã upload: https://youtu.be/{video_id}")
+        if not args.no_short:
+            publish_short(row, mp4, meta, info, video_id, args)
         try:
             increment_num(row["client_id"])
             print("  num +1")
