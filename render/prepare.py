@@ -168,7 +168,7 @@ REGISTER = {"sceneries": register_scenery, "mounts": register_mount, "monsters":
 
 
 def try_pick(client: HostClient, kind: str, files: list[str], rng: random.Random, manifest: dict,
-             key: str, game: Path, count: int = 1) -> list[str]:
+             key: str, game: Path, count: int = 1, melee_only: bool = False) -> list[str]:
     """Thử lần lượt cho tới khi đủ `count` gói hợp lệ (có trong manifest và đủ ảnh sau khi giải nén)."""
     chosen: list[str] = []
     entries = {e["id"]: e for e in manifest[key]} if key in manifest else {}
@@ -190,6 +190,8 @@ def try_pick(client: HostClient, kind: str, files: list[str], rng: random.Random
                 if missing:
                     raise RuntimeError(f"thiếu {len(missing)} ảnh, ví dụ {missing[0]}")
                 ok = True
+            if ok and melee_only and entries.get(ident, {}).get("ranged"):
+                raise RuntimeError("quái tầm xa, không dùng cho mồm boss")
             if ok:
                 chosen.append(f)
         except Exception as exc:  # noqa: BLE001
@@ -255,14 +257,18 @@ def main() -> None:
     boss = pick_planned("boss", "bosses", [sc["boss"]] if sc.get("boss") else [], 1) \
         or try_pick(client, "boss", listing["boss"], rng, manifest, "bosses", game)
     monsters = pick_planned("monster", "monsters", sc.get("monsters", []), len(sc.get("monsters", []))) \
-        or try_pick(client, "monster", listing["monster"], rng, manifest, "monsters", game, rng.randint(3, 5))
+        or try_pick(client, "monster", listing["monster"], rng, manifest, "monsters", game, rng.randint(5, 10))
+    mouth_pool = [f for f in listing["monster"] if f not in monsters]
+    mouth = try_pick(client, "monster", mouth_pool, rng, manifest, "monsters", game, rng.randint(3, 5), melee_only=True)
+    if not mouth:
+        print("  ! không chọn được quái đánh gần độc quyền cho mồm boss")
     if not (scenery and mount and boss and monsters):
         sys.exit("Không chọn đủ cảnh / thú cưỡi / boss / quái hợp lệ từ host")
 
     ids = lambda names: [Path(n).stem for n in names]  # noqa: E731
     manifest["sceneries"] = [e for e in manifest["sceneries"] if e["id"] in ids(scenery)]
     manifest["mounts"] = [e for e in manifest["mounts"] if e["id"] in ids(mount)]
-    manifest["monsters"] = [e for e in manifest["monsters"] if e["id"] in ids(monsters)]
+    manifest["monsters"] = [e for e in manifest["monsters"] if e["id"] in ids(monsters) + ids(mouth)]
     facings = client.facings()
     for entry in manifest["monsters"]:
         facing = facings.get(entry["id"])
@@ -291,13 +297,14 @@ def main() -> None:
         "mount": mount[0],
         "boss": boss[0],
         "monsters": monsters,
+        "mouthMonsters": mouth,
         "sceneryFromPriority": from_priority,
         "scenarioId": scenario["id"] if scenario else "",
         "musicFile": music_file,
         "musicSeed": rng.randrange(1_000_000),
     }
     Path(args.plan).write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Seed {seed} | {duration}s | cảnh {scenery[0]} | thú cưỡi {mount[0]} | boss {boss[0]} | quái {monsters}")
+    print(f"Seed {seed} | {duration}s | cảnh {scenery[0]} | thú cưỡi {mount[0]} | boss {boss[0]} | quái {monsters} | quái mồm boss {mouth}")
 
 
 if __name__ == "__main__":
