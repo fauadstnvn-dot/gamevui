@@ -1527,6 +1527,7 @@
     if (!o.home) return;
     let best = null, bd = 1e9;
     for (let m of e.monsters) {
+      if (m.burrow) continue;
       let u = Ee(m), d = Math.hypot(u.x + u.w / 2 - o.x, u.y + u.h / 2 - o.y);
       if (u.x + u.w / 2 > o.x - 20 && d < bd && !o.hitIds.includes(m.uid)) { bd = d; best = u; }
     }
@@ -1847,6 +1848,7 @@
     e.monsters = e.monsters.filter((a) => a !== n);
   }
   function $e(e, n, t) {
+    if (n.burrow) return;
     if (n.shield > 0) {
       n.shield--;
       n.flash = 0.12;
@@ -3193,6 +3195,33 @@
       ((o.blessed = gvB), gvB && (o.blessLabel = T(e.lang, "PH\u00DAC", "BLESSED")));
       ((o.age += n), (o.flash = Math.max(0, o.flash - n)), (o.cooldown -= n * gvBm), (o.shieldFx = Math.max(0, (o.shieldFx || 0) - n)), (o.regen || gvB) && o.hp < o.maxHp && (o.hp = Math.min(o.maxHp, o.hp + o.maxHp * (gvB ? 0.1 : 0.04) * n)));
       gvB && ((o.blessFx = (o.blessFx || 0) - n) <= 0) && ((o.blessFx = 0.6), A(e, "ring", o.x, o.y, o.h * 0.9, 0.4));
+      if (o.burrow) {
+        let b = o.burrow;
+        ((b.t += n), (o.x -= a * 0.55 * n), (o.hp = Math.min(b.target, o.hp + b.rate * n)));
+        ((b.fx = (b.fx || 0) - n) <= 0) && ((b.fx = 0.4), A(e, "ring", o.x, P + 4, o.w * 0.7, 0.35), he(e, "+", o.x + e.rng.range(-20, 20), P - 10, "#86efac", 24, 0.7));
+        b.t >= b.dur &&
+          ((o.burrow = null),
+          (o.hp = Math.max(o.hp, b.target)),
+          (o.state = "move"),
+          (o.cooldown = 0.15),
+          (o.dmgDone = !1),
+          (e.shake = Math.max(e.shake, 0.3)),
+          A(e, "boom", o.x, P, o.w * 1.4, 0.4),
+          he(e, T(e.lang, "TR\u1ED2I L\u1EA0I!", "BACK UP!"), o.x, o.y - o.h * 0.6, "#fca5a5", 30, 0.9));
+        o.x < -o.w && (e.monsters = e.monsters.filter((u) => u !== o));
+        continue;
+      }
+      if (o.def.kind !== "fly" && o.state === "move" && !o.burrowed && o.hp > 0 && o.hp < o.maxHp * 0.25 && o.x < M - 80 && o.x > 120) {
+        o.burrowed = !0;
+        if (e.rng.next() < 0.05) {
+          let gvTg = o.maxHp * 0.7;
+          ((o.burrow = { t: 0, dur: 3.4, target: gvTg, rate: Math.max(1, gvTg - o.hp) / 2.9, label: T(e.lang, "H\u1ED2I M\u00C1U...", "HEALING...") }),
+            (e.shake = Math.max(e.shake, 0.2)),
+            A(e, "boom", o.x, P, o.w * 1.2, 0.4),
+            he(e, T(e.lang, "CHUI XU\u1ED0NG \u0110\u1EA4T!", "BURROWING!"), o.x, o.y - o.h * 0.6, "#fcd34d", 28, 0.9));
+          continue;
+        }
+      }
       let l = t.x - o.x;
       if (o.state === "attack") {
         if (((o.stateT -= n), o.def.ranged)) {
@@ -3353,7 +3382,7 @@
     for (let s of e.bullets.slice()) {
       let o = !1;
       for (let l of e.monsters.slice()) {
-        if (s.hitIds.includes(l.uid) || l.x > M - 30) continue;
+        if (l.burrow || s.hitIds.includes(l.uid) || l.x > M - 30) continue;
         let u = Ee(l);
         if (s.x > u.x && s.x < u.x + u.w && s.y > u.y && s.y < u.y + u.h)
           if (
@@ -3395,7 +3424,7 @@
     }
     for (let s of e.monsters)
       if (
-        (s.state !== "attack" && s.def.kind === "fly" && s.state, Mn(a, Ee(s)))
+        !s.burrow && (s.state !== "attack" && s.def.kind === "fly" && s.state, Mn(a, Ee(s)))
       ) {
         let o = (s.elite ? 20 : 12) * (s.blessed ? 1.5 : 1);
         a0Hit(e, s);
@@ -3552,7 +3581,7 @@
       t = null,
       a = 1 / 0;
     for (let i of e.monsters) {
-      if (i.x < n.x - 40 || i.x > 1250) continue;
+      if (i.burrow || i.x < n.x - 40 || i.x > 1250) continue;
       let r = i.x - n.x,
         s = i.y - (n.y - 100);
       if (Math.atan2(Math.abs(s), Math.max(1, r)) > 1.2) continue;
@@ -4370,6 +4399,58 @@
       g = !i && t.cooldown < 0.45 && t.cooldown > -1 && Math.abs(a - t.x) < (gvRg ? 900 : 330),
       y = 0.5 + 0.5 * Math.sin(t.age * 28),
       S = t.y + t.h / 2 - 8 - t.h / 2;
+    if (t.burrow) {
+      let b = t.burrow,
+        d = Math.max(0, Math.min(1, b.t < 0.5 ? b.t / 0.5 : b.t > b.dur - 0.5 ? (b.dur - b.t) / 0.5 : 1)),
+        gy = t.y + t.h / 2 - 8,
+        sink = d * t.h * 1.05,
+        sc = h * ta(t.def),
+        part = (up, alpha, flt) => {
+          (e.save(),
+            e.beginPath(),
+            up ? e.rect(t.x - c, gy - t.h * 2, c * 2, t.h * 2) : e.rect(t.x - c, gy, c * 2, t.h * 2),
+            e.clip(),
+            (e.globalAlpha = alpha),
+            flt && (e.filter = flt),
+            e.translate(t.x, gy + sink),
+            e.scale(sc, 1),
+            e.drawImage(u, -c / 2, -t.h, c, t.h),
+            e.restore());
+        };
+      (e.save(),
+        (e.globalAlpha = 0.5 * d),
+        (e.fillStyle = "#3b2414"),
+        e.fillRect(t.x - c * 0.7, gy, c * 1.4, t.h * 1.1),
+        e.restore(),
+        part(!0, 1, void 0),
+        part(!1, 0.55, "brightness(0.55) saturate(0.7)"));
+      let wob = Math.sin(b.t * 18) * 2;
+      (e.save(),
+        (e.fillStyle = "#4a3322"),
+        e.beginPath(),
+        e.ellipse(t.x + wob, gy + 2, c * (0.2 + 0.12 * d), 6 + 6 * d, 0, 0, Math.PI * 2),
+        e.fill(),
+        (e.strokeStyle = "#2a1a0e"),
+        (e.lineWidth = 2),
+        e.stroke());
+      if (d > 0.9) {
+        let ratio = Math.max(0, Math.min(1, t.hp / t.maxHp)),
+          bw = 70;
+        ((e.fillStyle = "rgba(0,0,0,0.6)"),
+          e.fillRect(t.x - bw / 2, gy + t.h * 0.3, bw, 8),
+          (e.fillStyle = "#4ade80"),
+          e.fillRect(t.x - bw / 2, gy + t.h * 0.3, bw * ratio, 8),
+          (e.font = "bold 14px sans-serif"),
+          (e.textAlign = "center"),
+          (e.lineWidth = 3),
+          (e.strokeStyle = "rgba(0,0,0,0.8)"),
+          (e.fillStyle = "#bbf7d0"),
+          e.strokeText(b.label, t.x, gy + t.h * 0.3 - 6),
+          e.fillText(b.label, t.x, gy + t.h * 0.3 - 6));
+      }
+      (e.restore());
+      return;
+    }
     if (g) {
       (e.save(), (e.globalAlpha = 0.25 + y * 0.3));
       let b = e.createRadialGradient(t.x, S, 6, t.x, S, t.h * 0.75);
@@ -6095,7 +6176,7 @@
     );
   }
   function skTargets(e) {
-    return e.monsters.filter((m) => m.hp > 0 && m.x > 150 && m.x < M - 70);
+    return e.monsters.filter((m) => m.hp > 0 && !m.burrow && m.x > 150 && m.x < M - 70);
   }
   function skMuzzle(e) {
     let g = we(e.player);
