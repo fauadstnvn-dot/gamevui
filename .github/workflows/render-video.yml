@@ -68,8 +68,6 @@ on:
     # Gaming prime times for a global English audience (US + UK/EU), in UTC:
     # 15:00 UTC (11am ET / 4pm UK), 20:00 UTC (4pm ET / 1pm PT / 9pm UK), 00:00 UTC (8pm ET / 5pm PT).
     # Starts ~40 min early to leave render time; odd minutes avoid GitHub's :00/:30 congestion.
-    - cron: "19 14 * * *"  # publish ~15:00 UTC
-    - cron: "23 19 * * *"  # publish ~20:00 UTC
     - cron: "17 23 * * *"  # publish ~00:00 UTC
 
 concurrency:
