@@ -198,7 +198,7 @@ await page.evaluate(
     }
     setValue('seed', String(plan.seed))
     setValue('mode', 'auto')
-    setValue('outcome', 'win')
+    setValue('outcome', 'random')
     setValue('rider', 'none')
     setValue('mount', stem(plan.mount))
     setValue('boss', stem(plan.boss))
