@@ -2903,9 +2903,32 @@
         A(e, "dust", a.x - 20, a.y, 70, 0.35));
     }
     a.jumpHeld = n.jump;
+    let fm = e.manifest.mounts.find((m) => m.id === e.mountId);
+    if (fm && fm.fly) {
+      if (a.soarT > 0) {
+        a.soarP += t / a.soarDur;
+        if (a.soarP >= 1) a.soarT = 0;
+        else {
+          a.vy = (-a.soarH * Math.PI * Math.cos(Math.PI * a.soarP)) / a.soarDur;
+          a.onGround = !1;
+          a.standing = null;
+        }
+      } else {
+        a.soarCd = (a.soarCd != null ? a.soarCd : e.rng.range(4, 8)) - t;
+        if (a.soarCd <= 0 && !a.standing) {
+          a.soarCd = e.rng.range(7, 13);
+          a.soarH = Math.max(0, Math.min(e.rng.range(260, 380), a.y - 140));
+          a.soarDur = e.rng.range(1.8, 2.4);
+          a.soarP = 0;
+          a.soarT = a.soarH > 120 ? a.soarDur : 0;
+          a.jumpsLeft = Math.min(a.jumpsLeft, 1);
+          a.soarT > 0 && A(e, "dust", a.x - 20, a.y, 90, 0.4);
+        }
+      }
+    }
     let s = a.y;
     if (
-      ((a.vy += 2100 * t),
+      ((a.vy += (a.soarT > 0 ? 0 : 2100) * t),
       (a.y += a.vy * t),
       (a.runPhase += t * (6 + e.speed / 60)),
       a.standing)
