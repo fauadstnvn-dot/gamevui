@@ -4239,9 +4239,12 @@
       "volt-mouse",
     ]),
     ea = new Set(["minotaur", "godzilla", "raptor-runner", "horn-triceratops"]);
+  // Hướng nhìn của sprite gốc lấy từ host (manifest.monsters[].facing, ghi bởi render/prepare.py).
+  // Zn/ea chỉ còn là dự phòng cho manifest cũ chưa có trường facing.
   function ta(e) {
-    let t = Zn.has(e) ? -1 : 1;
-    return ea.has(e) ? -t : t;
+    if (e && (e.facing === "left" || e.facing === "right")) return e.facing === "right" ? -1 : 1;
+    let n = e && e.id;
+    return Zn.has(n) || ea.has(n) ? -1 : 1;
   }
   function na(e, n, t, a) {
     let i = t.state === "attack",
@@ -4307,7 +4310,7 @@
           (e.globalAlpha = x),
           B ? (e.filter = B) : t.flash > 0 && (e.filter = "brightness(2.2)"),
           t.elite && !B && ((e.shadowColor = "#ffcf33"), (e.shadowBlur = 24)),
-          e.scale(h * ta(t.def.id) * $, I),
+          e.scale(h * ta(t.def) * $, I),
           e.drawImage(u, -c / 2, -t.h, c, t.h),
           e.restore());
       },
