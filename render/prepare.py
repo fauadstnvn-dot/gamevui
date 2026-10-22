@@ -200,8 +200,39 @@ def try_pick(client: HostClient, kind: str, files: list[str], rng: random.Random
     return chosen
 
 
+# (kết quả, kiểu kịch bản của game, trọng số). "Sát nút" = trận mà bên nào cũng có thể thắng cho tới phút chót.
+DRAMA_STYLES = {
+    "clutch": ("win", 40),     # máu tụt sát đáy rồi lật kèo ở những giây cuối (đảo chiều)
+    "close": ("lose", 28),     # boss chỉ còn chút máu thì tướng quân gục ngã (thua sát nút)
+    "sudden": ("lose", 12),    # đang ổn bị dồn dập sét đánh ở cuối (đảo chiều ngược)
+    "attrition": ("lose", 8),  # cạn sức dần
+    "dominant": ("win", 12),   # áp đảo, giữ để video không toàn kịch tính
+}
+DRAMA_MODES = {
+    "close": ("clutch", "close", "sudden"),   # chỉ chọn trận sát nút / đảo chiều
+    "mixed": tuple(DRAMA_STYLES),             # có đủ kiểu, nghiêng về kịch tính
+    "any": (),                                # để game tự bốc thăm như cũ
+}
+
+
+def pick_drama(rng: random.Random, mode: str, forced: str = "") -> tuple[str, str]:
+    """Trả về (outcome, style). outcome 'random' + style rỗng nghĩa là để game tự quyết như trước."""
+    if forced in DRAMA_STYLES:
+        return DRAMA_STYLES[forced][0], forced
+    allowed = DRAMA_MODES.get(mode, DRAMA_MODES["mixed"])
+    if not allowed:
+        return "random", ""
+    names = list(allowed)
+    style = rng.choices(names, weights=[DRAMA_STYLES[n][1] for n in names])[0]
+    return DRAMA_STYLES[style][0], style
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--drama", default=os.environ.get("DRAMA_MODE", "mixed"), choices=list(DRAMA_MODES),
+                    help="close = chỉ trận sát nút/đảo chiều, mixed = nghiêng về kịch tính, any = như cũ")
+    ap.add_argument("--style", default=os.environ.get("DRAMA_STYLE", ""),
+                    help="Ép kiểu trận: " + ", ".join(DRAMA_STYLES))
     ap.add_argument("--host", default=os.environ.get("ASSET_HOST_URL", ""),
                     help="URL host (https://…) hoặc thư mục cục bộ")
     ap.add_argument("--token", default=os.environ.get("ASSET_HOST_TOKEN", ""))
@@ -330,9 +361,17 @@ def main() -> None:
     if not music_file:
         print("  (không có nhạc ngoài, dùng nhạc nền có sẵn của game)")
 
+    outcome, style = pick_drama(random.Random(seed ^ 0x5EED), args.drama, args.style)
+    # Kịch bản ưu tiên có thể ép sẵn kết quả; khi đó tôn trọng kịch bản.
+    if sc.get("outcome") in ("win", "lose"):
+        outcome, style = sc["outcome"], ""
+    print(f"  kiểu trận: {style or 'để game tự quyết'} ({outcome})")
+
     plan = {
         "seed": seed,
         "duration": duration,
+        "outcome": outcome,
+        "style": style,
         "scenery": scenery[0],
         "sceneries": scenery,
         "swallow": len(scenery) >= 2,
