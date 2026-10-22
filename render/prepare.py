@@ -336,6 +336,7 @@ def main() -> None:
         "scenery": scenery[0],
         "sceneries": scenery,
         "swallow": len(scenery) >= 2,
+        "transition": rng.choice(["swallow", "quake", "blackhole", "portal", "lightning"]),
         "mount": mount[0],
         "boss": boss[0],
         "monsters": monsters,
