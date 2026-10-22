@@ -12,8 +12,8 @@ from pathlib import Path
 import pymysql
 import requests
 
-from .metadata import generate
-from .shorts import build_short
+from .metadata import SHORT_TITLE_MAX, _clean_title, generate, pretty
+from .shorts import KINDS, build_short
 
 TABLE = "tb_bao_secret"
 MAX_NUM = 9
@@ -194,23 +194,41 @@ def post_comment(access_token: str, video_id: str, text: str) -> bool:
     return False
 
 
+def short_package(kind: str, meta: dict, info: dict, main_url: str) -> dict:
+    """Tiêu đề / mô tả / tag / bình luận riêng cho từng loại Short."""
+    mount, boss = pretty(str(meta.get("mount", ""))) or "Hero", pretty(str(meta.get("boss", ""))) or "Boss"
+    if kind == "predict":
+        title = _clean_title(f"Who wins? {mount} vs {boss} - Guess Before The End", SHORT_TITLE_MAX)
+        desc = (
+            f"Who do you think wins: {mount} or {boss}? Comment 1 for {mount} or 2 for {boss}!\n"
+            f"The answer is in the full battle: {main_url}\n\n"
+            "#shorts #whowins #bossbattle #fantasyanimation"
+        )
+        comment = f"1 = {mount}, 2 = {boss}. Vote now, then watch the full battle to see who really wins: {main_url}"
+        return {"title": f"{title} #Shorts", "description": desc, "tags": info["short_tags"], "comment": comment}
+    return {
+        "title": f"{info['short_title']} #Shorts",
+        "description": fill_main_url(info["short_description"], main_url),
+        "tags": info["short_tags"],
+        "comment": fill_main_url(info["comment"], main_url),
+    }
+
+
 def publish_short(row: dict, mp4: Path, meta: dict, info: dict, main_id: str, args) -> None:
-    """Dựng và đăng Short với cùng tài khoản; mọi lỗi chỉ cảnh báo, không làm hỏng video chính."""
+    """Dựng và đăng các loại Short với cùng tài khoản; mọi lỗi chỉ cảnh báo, không làm hỏng video chính."""
     main_url = f"https://youtu.be/{main_id}"
-    short_mp4 = mp4.with_name(mp4.stem + "-short.mp4")
-    try:
-        build_short(mp4, meta, info, short_mp4, Path(".work") / "short")
-        short_info = {
-            "title": f"{info['short_title']} #Shorts",
-            "description": fill_main_url(info["short_description"], main_url),
-            "tags": info["short_tags"],
-        }
-        token = valid_access_token(row)
-        short_id = upload(token, short_mp4, short_info, args.privacy, args.category, args.made_for_kids)
-        print(f"Đã upload Short: https://youtube.com/shorts/{short_id}")
-        post_comment(token, short_id, fill_main_url(info["comment"], main_url))
-    except Exception as exc:  # noqa: BLE001
-        print(f"  ! Không đăng được Short (video chính đã lên): {exc}")
+    kinds = [k for k in (args.short_types or "").split(",") if k in KINDS] or list(KINDS)
+    for kind in kinds:
+        short_mp4 = mp4.with_name(f"{mp4.stem}-short-{kind}.mp4")
+        try:
+            build_short(mp4, meta, info, short_mp4, Path(".work") / f"short-{kind}", kind=kind)
+            pkg = short_package(kind, meta, info, main_url)
+            token = valid_access_token(row)
+            short_id = upload(token, short_mp4, pkg, args.privacy, args.category, args.made_for_kids)
+            print(f"Đã upload Short {kind}: https://youtube.com/shorts/{short_id}")
+            post_comment(token, short_id, pkg["comment"])
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ! Không đăng được Short {kind} (video chính đã lên): {exc}")
 
 
 def main() -> None:
@@ -220,6 +238,8 @@ def main() -> None:
                     choices=["public", "unlisted", "private"])
     ap.add_argument("--category", default="20", help="20 = Gaming")
     ap.add_argument("--made-for-kids", action="store_true")
+    ap.add_argument("--short-types", default=os.environ.get("SHORT_TYPES", "predict,highlight"),
+                    help="Các loại Short, cách nhau dấu phẩy: predict (không lộ kết quả), highlight (cú quyết định)")
     ap.add_argument("--no-short", action="store_true", help="Không dựng/đăng YouTube Short kèm theo")
     ap.add_argument("--dry-run", action="store_true", help="Chỉ tạo metadata, không upload / không đổi DB")
     args = ap.parse_args()
