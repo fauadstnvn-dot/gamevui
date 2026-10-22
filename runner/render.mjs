@@ -198,7 +198,8 @@ await page.evaluate(
     }
     setValue('seed', String(plan.seed))
     setValue('mode', 'auto')
-    setValue('outcome', 'random')
+    window.__gvStyle = plan.style || ''
+    setValue('outcome', ['win', 'lose'].includes(plan.outcome) ? plan.outcome : 'random')
     setValue('rider', 'none')
     setValue('mount', stem(plan.mount))
     setValue('boss', stem(plan.boss))
@@ -270,6 +271,7 @@ const meta = {
     : null,
   seed: plan.seed,
   duration: plan.duration,
+  style: plan.style || null,
   resolution: `${width}x${height}`,
   fps,
   scenery: plan.scenery,
