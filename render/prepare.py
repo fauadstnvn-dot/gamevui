@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .assets import HostClient
 
+MAX_SCENES = 2
 ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "app"
 
@@ -244,7 +245,13 @@ def main() -> None:
                 print(f"  ! kịch bản: không có {kind} '{n}' trên host")
         return try_pick(client, kind, files, rng, manifest, key, game, count) if files else []
 
-    scenery = pick_planned("scenery", "sceneries", [sc["scenery"]] if sc.get("scenery") else [], 1)
+    stem = lambda f: Path(f).stem  # noqa: E731
+    scenario_names = list(dict.fromkeys(sc.get("sceneries") or ([sc["scenery"]] if sc.get("scenery") else [])))[:MAX_SCENES]
+
+    # Cảnh do kịch bản chỉ định, giữ nguyên thứ tự (cảnh đầu tiên = màn 1).
+    scenery: list[str] = []
+    for name in scenario_names:
+        scenery += pick_planned("scenery", "sceneries", [name], 1)
     from_priority = False
     if not scenery:
         # Ưu tiên cảnh trong chon-canh-vat (xóa sau khi dựng xong); nếu không có/không hợp lệ thì dùng canh-vat.
@@ -252,14 +259,46 @@ def main() -> None:
         from_priority = bool(scenery)
     if not scenery:
         scenery = try_pick(client, "scenery", listing["scenery"], rng, manifest, "sceneries", game)
+    # Kịch bản chọn đúng N cảnh thì giữ N cảnh (1 cảnh = không có cảnh boss hút người); còn lại luôn lấy đủ 2 cảnh.
+    want_scenes = len(scenery) if scenario_names else MAX_SCENES
+    if scenery and len(scenery) < want_scenes:
+        rest = [f for f in listing["scenery"] if stem(f) not in {stem(x) for x in scenery}]
+        scenery += try_pick(client, "scenery", rest, rng, manifest, "sceneries", game, want_scenes - len(scenery))
+    if len(scenery) < 2:
+        print("  (chỉ có 1 cảnh: không có cảnh boss hút nhân vật)")
+
     mount = pick_planned("mount", "mounts", [sc["mount"]] if sc.get("mount") else [], 1) \
         or try_pick(client, "mount", listing["mount"], rng, manifest, "mounts", game)
     boss = pick_planned("boss", "bosses", [sc["boss"]] if sc.get("boss") else [], 1) \
         or try_pick(client, "boss", listing["boss"], rng, manifest, "bosses", game)
-    monsters = pick_planned("monster", "monsters", sc.get("monsters", []), len(sc.get("monsters", []))) \
-        or try_pick(client, "monster", listing["monster"], rng, manifest, "monsters", game, rng.randint(5, 10))
-    mouth_pool = [f for f in listing["monster"] if f not in monsters]
-    mouth = try_pick(client, "monster", mouth_pool, rng, manifest, "monsters", game, rng.randint(3, 5), melee_only=True)
+
+    # Mỗi cảnh một bộ quái riêng, không trùng nhau. Quái kịch bản chỉ định được chia xen kẽ cho các cảnh.
+    planned_monsters = sc.get("monsters", [])
+    split = [planned_monsters] if len(scenery) == 1 else [planned_monsters[i::len(scenery)] for i in range(len(scenery))]
+    scene_monsters: list[list[str]] = []
+    used: set[str] = set()
+    for names in split:
+        group = pick_planned("monster", "monsters", [n for n in names if Path(n).stem not in used], len(names)) if names else []
+        if not group:
+            pool = [f for f in listing["monster"] if f not in used]
+            group = try_pick(client, "monster", pool, rng, manifest, "monsters", game, rng.randint(5, 10))
+        if not group:
+            break
+        scene_monsters.append(group)
+        used.update(group)
+    if len(scene_monsters) < len(scenery):
+        print(f"  ! không đủ quái riêng cho {len(scenery)} cảnh, giữ {len(scene_monsters)} cảnh")
+        scenery = scenery[:max(1, len(scene_monsters))]
+    monsters = [f for group in scene_monsters for f in group]
+
+    # Quái nhả ra từ mồm boss: đánh gần, tách riêng từng cảnh và không trùng quái thường.
+    scene_mouth: list[list[str]] = []
+    for _ in scenery:
+        pool = [f for f in listing["monster"] if f not in used]
+        group = try_pick(client, "monster", pool, rng, manifest, "monsters", game, rng.randint(3, 5), melee_only=True)
+        scene_mouth.append(group)
+        used.update(group)
+    mouth = [f for group in scene_mouth for f in group]
     if not mouth:
         print("  ! không chọn được quái đánh gần độc quyền cho mồm boss")
     if not (scenery and mount and boss and monsters):
@@ -267,6 +306,7 @@ def main() -> None:
 
     ids = lambda names: [Path(n).stem for n in names]  # noqa: E731
     manifest["sceneries"] = [e for e in manifest["sceneries"] if e["id"] in ids(scenery)]
+    manifest["sceneries"].sort(key=lambda e: ids(scenery).index(e["id"]))
     manifest["mounts"] = [e for e in manifest["mounts"] if e["id"] in ids(mount)]
     manifest["monsters"] = [e for e in manifest["monsters"] if e["id"] in ids(monsters) + ids(mouth)]
     facings = client.facings()
@@ -294,17 +334,21 @@ def main() -> None:
         "seed": seed,
         "duration": duration,
         "scenery": scenery[0],
+        "sceneries": scenery,
+        "swallow": len(scenery) >= 2,
         "mount": mount[0],
         "boss": boss[0],
         "monsters": monsters,
         "mouthMonsters": mouth,
+        "sceneMonsters": {stem(sn): ids(g) for sn, g in zip(scenery, scene_monsters)},
+        "sceneMouth": {stem(sn): ids(g) for sn, g in zip(scenery, scene_mouth)},
         "sceneryFromPriority": from_priority,
         "scenarioId": scenario["id"] if scenario else "",
         "musicFile": music_file,
         "musicSeed": rng.randrange(1_000_000),
     }
     Path(args.plan).write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Seed {seed} | {duration}s | cảnh {scenery[0]} | thú cưỡi {mount[0]} | boss {boss[0]} | quái {monsters} | quái mồm boss {mouth}")
+    print(f"Seed {seed} | {duration}s | cảnh {scenery} | thú cưỡi {mount[0]} | boss {boss[0]} | quái {monsters} | quái mồm boss {mouth}")
 
 
 if __name__ == "__main__":
