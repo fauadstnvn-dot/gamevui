@@ -14,10 +14,12 @@ import requests
 
 from .metadata import SHORT_TITLE_MAX, _clean_title, generate, pretty
 from .shorts import KINDS, build_short
+from .thumbnail import build_thumbnail
 
 TABLE = "tb_bao_secret"
 MAX_NUM = 9
 TOKEN_URL = "https://oauth2.googleapis.com/token"
+THUMB_URL = "https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId={video_id}"
 COMMENT_URL = "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet"
 UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status"
 
@@ -194,6 +196,24 @@ def post_comment(access_token: str, video_id: str, text: str) -> bool:
     return False
 
 
+def set_thumbnail(access_token: str, video_id: str, jpg: Path) -> bool:
+    """Đặt thumbnail tuỳ chỉnh (kênh phải được xác minh số điện thoại; thiếu quyền thì chỉ cảnh báo)."""
+    r = requests.post(THUMB_URL.format(video_id=video_id), timeout=120, data=jpg.read_bytes(), headers={
+        "Authorization": f"Bearer {access_token}", "Content-Type": "image/jpeg"})
+    if r.status_code == 200:
+        return True
+    print(f"  ! Chưa đặt được thumbnail ({r.status_code}): {r.text[:200]}")
+    return False
+
+
+def main_comment(meta: dict) -> str:
+    """Bình luận đầu tiên dưới video chính để mở màn thảo luận bằng một lựa chọn 1 / 2."""
+    mount = pretty(str(meta.get("mount", ""))) or "Hero"
+    boss = pretty(str(meta.get("boss", ""))) or "Boss"
+    return (f"Who did you pick before the fight? Type 1 for {mount} or 2 for {boss}. "
+            f"Did the ending surprise you? Tell me below, and subscribe for the next battle!")
+
+
 def short_package(kind: str, meta: dict, info: dict, main_url: str) -> dict:
     """Tiêu đề / mô tả / tag / bình luận riêng cho từng loại Short."""
     mount, boss = pretty(str(meta.get("mount", ""))) or "Hero", pretty(str(meta.get("boss", ""))) or "Boss"
@@ -240,6 +260,8 @@ def main() -> None:
     ap.add_argument("--made-for-kids", action="store_true")
     ap.add_argument("--short-types", default=os.environ.get("SHORT_TYPES", "predict,highlight"),
                     help="Các loại Short, cách nhau dấu phẩy: predict (không lộ kết quả), highlight (cú quyết định)")
+    ap.add_argument("--no-thumbnail", action="store_true", help="Không tạo/đặt thumbnail tự động")
+    ap.add_argument("--no-comment", action="store_true", help="Không đăng bình luận đầu tiên dưới video chính")
     ap.add_argument("--no-short", action="store_true", help="Không dựng/đăng YouTube Short kèm theo")
     ap.add_argument("--dry-run", action="store_true", help="Chỉ tạo metadata, không upload / không đổi DB")
     args = ap.parse_args()
@@ -267,6 +289,15 @@ def main() -> None:
             print(f"  ! bỏ qua tài khoản này: {exc}")
             continue
         print(f"Đã upload: https://youtu.be/{video_id}")
+        if not args.no_thumbnail:
+            try:
+                jpg = build_thumbnail(mp4, meta, mp4.with_suffix(".thumb.jpg"), Path(".work") / "thumb")
+                print(f"Thumbnail: {jpg.name} ({jpg.stat().st_size // 1024} KB)")
+                set_thumbnail(valid_access_token(row), video_id, jpg)
+            except Exception as exc:  # noqa: BLE001
+                print(f"  ! Không tạo/đặt được thumbnail (video đã lên): {exc}")
+        if not args.no_comment:
+            post_comment(valid_access_token(row), video_id, main_comment(meta))
         if not args.no_short:
             publish_short(row, mp4, meta, info, video_id, args)
         try:
