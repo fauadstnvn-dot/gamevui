@@ -4,13 +4,13 @@
   const W = 1920
   const H = 1080
   const TLI = {
-    slideEnd: 0.9,
-    vsAt: 0.9,
-    questionAt: 2.2,
-    countAt: 4.8,
-    readyAt: 7.8,
-    goAt: 8.8,
-    end: 9.7,
+    slideEnd: 0.6,
+    vsAt: 0.6,
+    questionAt: 1.5,
+    countAt: 3.1,
+    readyAt: 6.1,
+    goAt: 6.9,
+    end: 7.6,
   }
   let TL = TLI
   let mode = 'intro'
