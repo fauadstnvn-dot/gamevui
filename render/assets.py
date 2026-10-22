@@ -128,11 +128,14 @@ class HostClient:
 def _scenario_clean(raw: dict) -> dict:
     str_or_empty = lambda v: v.strip() if isinstance(v, str) else ""  # noqa: E731
     monsters = [str_or_empty(m) for m in raw.get("monsters", []) if str_or_empty(m)] if isinstance(raw.get("monsters"), list) else []
+    raw_scenes = raw.get("sceneries") if isinstance(raw.get("sceneries"), list) else [raw.get("scenery")]
+    scenery_list = list(dict.fromkeys(str_or_empty(v) for v in raw_scenes if str_or_empty(v)))[:2]
     return {
         "id": str(raw.get("id", "")), "name": str_or_empty(raw.get("name")),
         "order": raw.get("order", 0) if isinstance(raw.get("order"), int) else 0,
         "created": raw.get("created", 0) if isinstance(raw.get("created"), int) else 0,
-        "boss": str_or_empty(raw.get("boss")), "scenery": str_or_empty(raw.get("scenery")),
+        "boss": str_or_empty(raw.get("boss")), "scenery": scenery_list[0] if scenery_list else "",
+        "sceneries": scenery_list,
         "mount": str_or_empty(raw.get("mount")), "monsters": monsters,
     }
 
