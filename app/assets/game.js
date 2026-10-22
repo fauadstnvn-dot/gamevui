@@ -9361,7 +9361,10 @@
     e.audioLog = r;
     let s = 60 / t,
       o = Math.ceil(a * t),
-      l = Math.round(2.5 * t),
+      gvFx = !!window.__gvKoFx,
+      l = Math.round((gvFx ? 4 : 2.5) * t),
+      gvPos = 0,
+      gvKoY = -1,
       u = 1 / 0,
       c = 0,
       h = [],
@@ -9380,12 +9383,27 @@
       },
       y = 0;
     for (; y < o && y < u && me; y++) {
-      let S = Math.round(y * s);
+      let gvK = 1;
+      if (gvFx && gvKoY >= 0) {
+        let gvSec = (y - gvKoY) / t;
+        gvK = gvSec < 0.15 ? 0.04 : Math.min(1, 0.22 + 0.78 * Math.pow(Math.min(1, (gvSec - 0.15) / 1.9), 1.6));
+      }
+      gvPos += s * gvK;
+      let S = gvFx ? Math.round(gvPos) : Math.round(y * s);
       ((e.audioClock = y / t),
         await e.advance(S - c),
         (c = S),
         (window.__lastSnap = e.snapshot()),
-        u === 1 / 0 && window.__lastSnap.result && (u = y + l));
+        gvFx && gvKoY >= 0 && e.state && (e.state.shake = Math.max(e.state.shake, 1.1 * (1 - Math.min(1, (y - gvKoY) / t / 1.6)))),
+        u === 1 / 0 &&
+          window.__lastSnap.result &&
+          ((u = y + l),
+          (gvKoY = y),
+          (window.__gvKoSec = y / t),
+          gvFx &&
+            e.state &&
+            ((e.state.shake = 1.6), (e.state.flash = { color: "rgba(255,255,255,0.9)", t: 0.4 })),
+          window.gvReportKo && window.gvReportKo(y / t)));
       let f = await ha(e.canvas);
       (h.push(f),
         (m += f.size),
