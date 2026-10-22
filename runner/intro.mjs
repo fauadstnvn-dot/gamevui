@@ -2,7 +2,7 @@
 // thống kê, kêu gọi đăng ký) rồi ghép vào đầu/cuối video đã dựng.
 // Dùng:  node runner/intro.mjs --plan plan.json --out output --width 2560 --height 1440 --fps 30
 //          [--intro true|false] [--outro true|false] [--style random] [--countdown random]
-//          [--outro-style random] [--stats-style random] [--cta-style random] [--winner auto|mount|boss|draw] [--channel "TÊN KÊNH"]
+//          [--teaser true|false] [--outro-style random] [--stats-style random] [--cta-style random] [--winner auto|mount|boss|draw] [--channel "TÊN KÊNH"]
 import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -29,6 +29,8 @@ const crf = Number(args.crf ?? 20)
 const preset = args.preset ?? 'veryfast'
 const wantIntro = args.intro !== 'false'
 const wantOutro = args.outro === 'true'
+// Teaser: cắt 2-3 giây căng nhất của trận chiếu ngay đầu video, trước màn VS, để giữ chân người xem trong 3 giây đầu.
+const wantTeaser = args.teaser !== 'false'
 const work = path.resolve('.work')
 fs.mkdirSync(work, { recursive: true })
 
@@ -201,11 +203,76 @@ async function renderSegment(mode, outMp4) {
   return duration
 }
 
+
+const TEASER_LINES = ['WHO WILL SURVIVE?', 'ONLY ONE WALKS AWAY', 'THIS GETS INTENSE...', 'CAN IT HOLD ON?', 'WAIT FOR THE ENDING!', 'NO ONE SAW THIS COMING']
+const TEASER_TAILS = ['WATCH TILL THE END', 'COMMENT YOUR PICK', 'WHO WINS? GUESS NOW']
+
+async function renderTeaser(outMp4) {
+  const ffprobe = process.env.FFPROBE ?? 'ffprobe'
+  const dur = spawnSync(ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', mainFile], { encoding: 'utf8' })
+  const mainDur = parseFloat(dur.stdout)
+  if (!(mainDur > 12)) return 0
+  const au = spawnSync(ffprobe, ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=codec_name', '-of', 'csv=p=0', mainFile], { encoding: 'utf8' })
+  const hasAudio = au.status === 0 && au.stdout.trim() !== ''
+
+  // Đoạn căng nhất nằm ngay trước khoảnh khắc ngã ngũ (cuối trận) nhưng dừng trước khi lộ bên thắng.
+  const SRC = 2.0
+  const SPEED = 0.8
+  const outSec = SRC / SPEED
+  const back = meta?.style === 'dominant' ? 9.5 : 8.2
+  const t0 = Math.max(1, Math.min(mainDur - back, mainDur - SRC - 2))
+
+  const r = mulberry((Number(plan.seed) || 1) ^ 0x7ea5)
+  const headline = TEASER_LINES[Math.floor(r() * TEASER_LINES.length)]
+  const tail = TEASER_TAILS[Math.floor(r() * TEASER_TAILS.length)]
+  const headFile = path.join(work, 'teaser-head.txt')
+  const tailFile = path.join(work, 'teaser-tail.txt')
+  fs.writeFileSync(headFile, headline)
+  fs.writeFileSync(tailFile, tail)
+  const font = path.join(appDir, 'assets', 'fonts', 'Anton-Regular.ttf')
+  const big = Math.round(height * 0.095)
+  const small = Math.round(height * 0.05)
+  const vfTeaser = [
+    `setpts=PTS/${SPEED}`,
+    'eq=contrast=1.12:saturation=1.3',
+    'vignette=PI/4',
+    `fps=${fps}`,
+    'fade=t=in:st=0:d=0.12:color=white',
+    `drawtext=fontfile=${font}:textfile=${headFile}:fontsize=${big}:fontcolor=white:borderw=6:bordercolor=black` +
+      `:box=1:boxcolor=0xE11D48@0.9:boxborderw=${Math.round(big * 0.3)}:x=(w-text_w)/2:y=h*0.12`,
+    `drawtext=fontfile=${font}:textfile=${tailFile}:fontsize=${small}:fontcolor=0xFDE047:borderw=4:bordercolor=black` +
+      ":x=(w-text_w)/2:y=h*0.84:enable='lt(mod(t,0.8),0.55)'",
+    `fade=t=out:st=${(outSec - 0.2).toFixed(2)}:d=0.2`,
+    'format=yuv420p',
+  ].join(',')
+  const af = `atempo=${SPEED},aresample=48000,aformat=channel_layouts=stereo,afade=t=in:d=0.05,afade=t=out:st=${(outSec - 0.3).toFixed(2)}:d=0.3`
+  await run(ffmpeg, [
+    '-y', '-hide_banner', '-nostdin', '-loglevel', 'error',
+    '-ss', t0.toFixed(2), '-t', String(SRC), '-i', mainFile,
+    '-vf', vfTeaser, ...(hasAudio ? ['-af', af] : ['-an']), '-r', String(fps), ...encodeArgs,
+    ...(hasAudio ? ['-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2'] : []),
+    '-t', outSec.toFixed(2), '-movflags', '+faststart', outMp4,
+  ])
+  console.log(`Teaser: "${headline}" cắt từ ${t0.toFixed(1)}s (${outSec.toFixed(1)}s, chậm ${SPEED}x)`)
+  return outSec
+}
+
+const teaserMp4 = path.join(work, 'teaser.mp4')
+let teaserSeconds = 0
+
 const introMp4 = path.join(work, 'intro.mp4')
 const outroMp4 = path.join(work, 'outro.mp4')
 let introSeconds = 0
 let outroSeconds = 0
 
+if (wantTeaser) {
+  try {
+    teaserSeconds = await renderTeaser(teaserMp4)
+  } catch (e) {
+    console.log('  ! không dựng được teaser, bỏ qua:', e.message.split('\n')[0])
+    teaserSeconds = 0
+  }
+}
 if (wantIntro) {
   console.log(`Mở màn: kiểu ${style}, đồng hồ ${countdown}, câu hỏi "${question}", "${readyText}" -> "${goText}"`)
   introSeconds = await renderSegment('intro', introMp4)
@@ -216,7 +283,7 @@ if (wantOutro) {
 }
 
 // ---------- ghép: [mở màn] + video chính + [kết thúc] ----------
-const parts = [wantIntro && introMp4, mainFile, wantOutro && outroMp4].filter(Boolean)
+const parts = [teaserSeconds > 0 && teaserMp4, wantIntro && introMp4, mainFile, wantOutro && outroMp4].filter(Boolean)
 const merged = path.join(work, 'merged.mp4')
 const probe = spawnSync(process.env.FFPROBE ?? 'ffprobe', ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=codec_name', '-of', 'csv=p=0', mainFile], { encoding: 'utf8' })
 const mainHasAudio = probe.status === 0 && probe.stdout.trim() !== ''
@@ -254,14 +321,16 @@ if (!ok) {
   }
 }
 fs.renameSync(merged, mainFile)
+fs.rmSync(teaserMp4, { force: true })
 fs.rmSync(introMp4, { force: true })
 fs.rmSync(outroMp4, { force: true })
 
 if (meta) {
   meta.baseDuration = meta.baseDuration ?? meta.duration
-  meta.duration = Math.round(meta.baseDuration + introSeconds + outroSeconds)
+  meta.duration = Math.round(meta.baseDuration + teaserSeconds + introSeconds + outroSeconds)
+  if (teaserSeconds > 0) meta.teaser = { seconds: teaserSeconds }
   if (wantIntro) meta.intro = { style, countdown, question, ready: readyText, go: goText, seconds: introSeconds }
   if (wantOutro) meta.outro = { kind: outroKind, stats: statsKind, cta: ctaKind, winner, answer: outro.answer, channel: channel || null, seconds: outroSeconds }
   fs.writeFileSync(metaFile, JSON.stringify(meta, null, 2))
 }
-console.log(`Đã ghép ${[wantIntro && 'mở màn', wantOutro && 'kết thúc'].filter(Boolean).join(' + ')} vào ${path.basename(mainFile)} (${(fs.statSync(mainFile).size / 1e6).toFixed(1)} MB)`)
+console.log(`Đã ghép ${[teaserSeconds > 0 && 'teaser', wantIntro && 'mở màn', wantOutro && 'kết thúc'].filter(Boolean).join(' + ')} vào ${path.basename(mainFile)} (${(fs.statSync(mainFile).size / 1e6).toFixed(1)} MB)`)
