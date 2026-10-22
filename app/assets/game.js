@@ -1114,13 +1114,16 @@
       i = Math.max(1, a.sceneries.length),
       r = a.duration / i,
       s = Z(ye(t, 424242)),
+      gvPool = a.outcome === "win" ? ["dominant", "clutch"] : a.outcome === "lose" ? ["attrition", "sudden", "close"] : [],
+      gvForced = typeof window !== "undefined" && gvPool.includes(window.__gvStyle) ? window.__gvStyle : null,
       o =
         a.outcome === "win"
           ? s.pick(["dominant", "clutch"])
           : a.outcome === "lose"
             ? s.pick(["attrition", "sudden", "close"])
-            : "natural",
-      l = a.outcome !== "natural";
+            : "natural";
+    gvForced && (o = gvForced);
+    let l = a.outcome !== "natural";
     return {
       scenario: a,
       stages: i,
