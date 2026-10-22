@@ -222,12 +222,13 @@ await page.evaluate(
 
 const sceneries = (plan.sceneries?.length ? plan.sceneries : [plan.scenery]).map(stem)
 await page.evaluate(
-  ({ ids, sceneMonsters, sceneMouth }) => {
+  ({ ids, sceneMonsters, sceneMouth, transition }) => {
+    window.__gvTransition = transition
     window.__gvMouthIds = ids
     window.__gvSceneMonsters = sceneMonsters
     window.__gvSceneMouth = sceneMouth
   },
-  { ids: (plan.mouthMonsters ?? []).map(stem), sceneMonsters: plan.sceneMonsters ?? {}, sceneMouth: plan.sceneMouth ?? {} },
+  { ids: (plan.mouthMonsters ?? []).map(stem), sceneMonsters: plan.sceneMonsters ?? {}, sceneMouth: plan.sceneMouth ?? {}, transition: plan.transition ?? 'swallow' },
 )
 
 for (const box of ['#sceneries', '#monsters']) {
