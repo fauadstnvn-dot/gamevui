@@ -27,6 +27,10 @@ const preset = args.preset ?? 'veryfast'
 // Nhạc ngoài ở mức nền (~35%); nhạc synth gốc của game được tắt khi có nhạc ngoài để không bị chồi giai điệu.
 const MUSIC_GAIN = Number(args['music-gain'] ?? 0.35)
 const GAME_MUSIC_VOL_WITH_EXTERNAL = 0
+// Hiệu ứng cú KO: quay chậm + rung + chớp trắng (trong game), im lặng ngắn trước KO và tiếng boom khi KO (khâu trộn âm).
+const KO_FX = args['ko-fx'] !== 'false'
+const KO_SILENCE = Number(args['ko-silence'] ?? 0.55)
+let koSec = null
 const maxMinutes = Number(args.timeout ?? 170)
 
 const plan = JSON.parse(fs.readFileSync(planPath, 'utf8'))
@@ -83,18 +87,34 @@ function startEncode(id, form) {
   const videoSec = total / fps
   // Nhạc ngoài lặp vô hạn rồi bị cắt theo độ dài tiếng game (amix duration=first). Nhạc tự hạ khi có tiếng
   // chiến đấu (sidechain), nhỏ hơn hiệu ứng, vào/ra mờ dần để không bị cắt đột ngột.
-  const audioGraph = [
-    '[1:a]aformat=sample_rates=48000:channel_layouts=stereo,asplit=2[sfx][key]',
-    `[2:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=${MUSIC_GAIN},afade=t=in:st=0:d=2[mus]`,
-    '[mus][key]sidechaincompress=threshold=0.04:ratio=5:attack=15:release=450:makeup=1[duck]',
-    '[sfx][duck]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,' +
-      `alimiter=limit=0.95,afade=t=out:st=${Math.max(0, videoSec - 3).toFixed(2)}:d=3[aout]`,
-  ].join(';')
+  // Dải âm động quanh cú KO: im lặng ngắn ngay trước KO (cả nhạc lẫn tiếng game), rồi một tiếng boom trầm đúng lúc KO.
+  const koFx = KO_FX && koSec != null && koSec > KO_SILENCE + 1
+  const dip = koFx
+    ? `volume='1-0.94*clip((t-${(koSec - KO_SILENCE).toFixed(3)})/0.12,0,1)*(1-clip((t-${koSec.toFixed(3)})/0.03,0,1))':eval=frame`
+    : 'anull'
+  const boomMs = koFx ? Math.max(0, Math.round((koSec - 0.02) * 1000)) : 0
+  const boom =
+    "aevalsrc='0.95*sin(2*PI*(46+70*exp(-t*10))*t)*exp(-t*3.2)+0.35*(random(0)*2-1)*exp(-t*16)':d=2.2:s=48000," +
+    `aformat=channel_layouts=stereo,adelay=${boomMs}|${boomMs}[boom]`
+  const graphParts = useMusic
+    ? [
+        '[1:a]aformat=sample_rates=48000:channel_layouts=stereo,asplit=2[sfx][key]',
+        `[2:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=${MUSIC_GAIN},afade=t=in:st=0:d=2[mus]`,
+        '[mus][key]sidechaincompress=threshold=0.04:ratio=5:attack=15:release=450:makeup=1[duck]',
+        `[sfx][duck]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,${dip}[mixed]`,
+      ]
+    : [`[1:a]aformat=sample_rates=48000:channel_layouts=stereo,${dip}[mixed]`]
+  if (koFx) graphParts.push(boom)
+  const tail = `alimiter=limit=0.95,afade=t=out:st=${Math.max(0, videoSec - 3).toFixed(2)}:d=3[aout]`
+  graphParts.push(koFx ? `[mixed][boom]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,${tail}` : `[mixed]${tail}`)
+  const audioGraph = graphParts.join(';')
+  const useGraph = hasAudio && (useMusic || koFx)
   const ff = [
     '-y', '-hide_banner', '-nostdin', '-loglevel', 'error', '-progress', 'pipe:1',
     '-framerate', String(fps), '-start_number', '0', '-i', path.join(frameDir, 'f%06d.jpg'),
     ...(hasAudio ? ['-i', wav] : []),
-    ...(useMusic ? ['-stream_loop', '-1', '-i', musicFile, '-filter_complex', audioGraph, '-map', '0:v', '-map', '[aout]'] : []),
+    ...(useMusic ? ['-stream_loop', '-1', '-i', musicFile] : []),
+    ...(useGraph ? ['-filter_complex', audioGraph, '-map', '0:v', '-map', '[aout]'] : []),
     '-vf', vf, '-r', String(fps),
     '-c:v', 'libx264', '-preset', preset, '-crf', String(crf), '-profile:v', 'high', '-level', '5.2',
     '-pix_fmt', 'yuv420p', '-color_range', 'tv', '-colorspace', 'bt709', '-color_primaries', 'bt709',
@@ -177,6 +197,10 @@ const browser = await chromium.launch({
 })
 const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } })
 page.on('pageerror', (e) => console.log('[page error]', e.message))
+await page.exposeFunction('gvReportKo', (sec) => {
+  koSec = sec
+  console.log(`KO ở ${sec.toFixed(2)}s`)
+})
 await page.route(/\/(api|packs)\.php/, handleApi)
 await page.goto(base, { waitUntil: 'load' })
 await page.waitForSelector('#sceneries button.chip', { timeout: 120_000 })
@@ -187,7 +211,7 @@ const music = musicValues[plan.musicSeed % musicValues.length]
 const stem = (n) => n.replace(/\.zip$/i, '')
 
 await page.evaluate(
-  ({ plan, size, fps, crf, music, gameMusicVol }) => {
+  ({ plan, size, fps, crf, music, gameMusicVol, koFx }) => {
     const stem = (n) => n.replace(/\.zip$/i, '')
     const setValue = (id, value) => {
       const el = document.getElementById(id)
@@ -199,6 +223,7 @@ await page.evaluate(
     setValue('seed', String(plan.seed))
     setValue('mode', 'auto')
     window.__gvStyle = plan.style || ''
+    window.__gvKoFx = koFx
     setValue('outcome', ['win', 'lose'].includes(plan.outcome) ? plan.outcome : 'random')
     setValue('rider', 'none')
     setValue('mount', stem(plan.mount))
@@ -218,6 +243,7 @@ await page.evaluate(
     crf,
     music,
     gameMusicVol: plan.musicFile && fs.existsSync(plan.musicFile) ? GAME_MUSIC_VOL_WITH_EXTERNAL : 0.5,
+    koFx: KO_FX,
   },
 )
 
@@ -272,6 +298,7 @@ const meta = {
   seed: plan.seed,
   duration: plan.duration,
   style: plan.style || null,
+  koSec,
   resolution: `${width}x${height}`,
   fps,
   scenery: plan.scenery,
