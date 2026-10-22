@@ -3847,7 +3847,10 @@
       s = e.sun;
     e.phase = "swallow";
     e.phaseT = 0;
-    e.sw = { t: 0, x0: p.x, y0: p.y, bx0: s.x, by0: s.y, sc0: s.scale, rot: 0, sx: 1, sy: 1, sc: 1, dir: 0, bossA: 1, fx: 0, hide: !1, laugh: !1, shotT: 0, ringT: 0, laughT: 0, gulped: !1, roared: !1, mons: null, poof: !1 };
+    e.sw = { t: 0, x0: p.x, y0: p.y, bx0: s.x, by0: s.y, sc0: s.scale, rot: 0, sx: 1, sy: 1, sc: 1, dir: 0, bossA: 1, fx: 0, hide: !1, laugh: !1, shotT: 0, ringT: 0, laughT: 0, gulped: !1, roared: !1, mons: null, poof: !1, stT: 0, cr: 0, hole: 0, hx: p.x + 10, hy: p.y };
+    let st = typeof window !== "undefined" && window.__gvTransition;
+    let SL = ["swallow", "quake", "blackhole", "portal", "lightning"];
+    e.sw.style = SL.includes(st) ? st : SL[Math.floor(e.rng.next() * SL.length)];
     e.fireballs = [];
     e.bolts = [];
     e.pickups = [];
@@ -3863,10 +3866,679 @@
     H(
       e,
       T(e.lang, "BOSS PH\u00C1T \u0110I\u00CAN!", "THE BOSS SNAPS!"),
-      T(e.lang, "B\u1EAFn m\u00E3i kh\u00F4ng ch\u1EBFt... n\u00F3 h\u00E1 m\u1ED3m ra!", "It can't finish you off... so it opens wide!"),
+      e.sw.style === "blackhole"
+        ? T(e.lang, "B\u1EAFn m\u00E3i kh\u00F4ng ch\u1EBFt... n\u00F3 m\u1EDF h\u1ED1 \u0111en h\u00FAt s\u1EA1ch m\u1ECDi th\u1EE9!", "It can't finish you off... so it opens a black hole!")
+        : e.sw.style === "portal"
+          ? T(e.lang, "B\u1EAFn m\u00E3i kh\u00F4ng ch\u1EBFt... n\u00F3 m\u1EDF c\u1ED5ng kh\u00F4ng gian d\u01B0\u1EDBi ch\u00E2n!", "It can't finish you off... so it opens a portal beneath you!")
+          : e.sw.style === "lightning"
+            ? T(e.lang, "B\u1EAFn m\u00E3i kh\u00F4ng ch\u1EBFt... n\u00F3 tri\u1EC7u h\u1ED3i s\u1EA5m s\u00E9t!", "It can't finish you off... so it calls down lightning!")
+            : e.sw.style === "quake"
+        ? T(e.lang, "B\u1EAFn m\u00E3i kh\u00F4ng ch\u1EBFt... n\u00F3 gi\u1EADm ch\u00E2n \u0111\u1EA5t n\u1EE9t to\u00E1c!", "It can't finish you off... so it stomps the ground apart!")
+        : T(e.lang, "B\u1EAFn m\u00E3i kh\u00F4ng ch\u1EBFt... n\u00F3 h\u00E1 m\u1ED3m ra!", "It can't finish you off... so it opens wide!"),
       2.6,
     );
     q(e, 1.12, M * 0.6, E * 0.42, 1.9, 0);
+  }
+  // ===== Kiểu chuyển cảnh 2: boss giậm chân, đất nứt toác, nhân vật rơi xuống hố =====
+  function gvQkTick(e, n, t) {
+    let w = e.sw,
+      p = e.player,
+      s = e.sun,
+      D = GV_SW,
+      cl = gvSwClamp,
+      T0 = D.roar,
+      T1 = T0 + D.inhale,
+      T2 = T1 + D.laugh,
+      T3 = T2 + D.gap,
+      TF = T0 + 0.5,
+      ease = (v) => v * v * (3 - 2 * v),
+      mouth = gvSwMouth(e),
+      K = w.style,
+      bhx = Math.min(w.hx + 260, M - 300),
+      bhy = w.hy - 130;
+    w.bhx = bhx;
+    w.bhy = bhy;
+    w.bolts = w.bolts || [];
+    for (let b of w.bolts) b.t += t;
+    e.speed = 90 * (1 - cl(w.t / T0) * 0.9);
+    e.scroll += e.speed * t;
+    let m1 = ease(cl(w.t / 1)),
+      ph = Math.max(0, w.t - D.windup) % 0.45,
+      bump = w.t >= D.windup && w.t < T0 + 0.9 ? Math.max(0, 1 - ph / 0.16) * 0.22 : 0,
+      tgtScale = w.t < D.windup ? w.sc0 * 0.85 : w.t < T1 ? 1.5 - bump : w.t < T2 ? 1.2 + Math.abs(Math.sin((w.t - T1) * 7)) * 0.16 : 0.4;
+    s.x = w.bx0 + (M - 270 - w.bx0) * m1;
+    s.y = w.by0 + (250 - w.by0) * m1 + Math.sin(w.t * 1.3) * 6 - bump * 90;
+    s.scale += (tgtScale - s.scale) * Math.min(1, t * 12);
+    s.spitT = 0;
+    s.flash = Math.max(0, s.flash - t);
+    w.laugh = w.t >= T1 + 0.25 && w.t < T2;
+    if (w.t >= D.windup && !w.roared) {
+      w.roared = !0;
+      N(e, "roar");
+      e.flash = { color: "rgba(255,120,40,0.25)", t: 0.3 };
+      he(e, K === "blackhole" ? "V\u00D9\u00D9\u00D9..." : K === "portal" ? "ZZZ..." : K === "lightning" ? "R\u1EA6M!" : "RUMBLE...", s.x, s.y - 150, "#fdba74", 60, 1.6);
+    }
+    w.stT -= t;
+    if (w.t >= D.windup && w.t < (K === "lightning" ? T1 - 0.2 : T0 + 0.9) && w.stT <= 0) {
+      w.stT = K === "lightning" ? 0.28 : 0.45;
+      N(e, "sunHit");
+      if (K === "lightning") {
+        w.bolts.push({ x: w.hx + e.rng.range(-1, 1) * (300 - 240 * cl((w.t - D.windup) / 3)), t: 0, seed: e.rng.next() * 100 });
+        e.flash = { color: "rgba(180,220,255,0.35)", t: 0.12 };
+      } else {
+        A(e, "ring", w.hx, w.hy, 220, 0.5);
+        A(e, "spark", w.hx, w.hy - 10, 60, 0.4);
+      }
+    }
+    e.shake = w.t < D.windup ? 0.35 : w.t < T0 + 1.2 ? 1.0 + 1.6 * cl((w.t - D.windup) / 1.5) : w.t < T1 ? 1.3 : Math.max(0, 0.6 * (1 - cl((w.t - T1) / 0.8)));
+    w.cr = cl((w.t - D.windup) / (T0 - D.windup));
+    w.hole = K === "lightning" ? 0 : K !== "quake" ? (w.t < T1 ? ease(cl((w.t - D.windup) / 1.4)) : 1 - cl((w.t - T1) / 0.6)) : w.t < T0 ? 0 : w.t < T1 ? ease(cl((w.t - T0) / 0.7)) : 1 - cl((w.t - T1) / 0.6);
+    w.fx = 0;
+    if (!w.hide) {
+      p.onGround = !1;
+      p.vy = 0;
+      let g = cl((w.t - TF) / (T1 - TF)),
+        fall = g * g;
+      if (w.t < T0) {
+        p.runPhase += t * 9;
+        p.x = w.hx - 10 + Math.sin(w.t * 45) * 3 * cl((w.t - D.windup) / 0.5);
+        p.y = w.y0 - Math.max(0, Math.sin(w.t * 11)) * 26 * cl((w.t - D.windup) / 0.5);
+        w.sc = 1;
+        w.rot = Math.sin(w.t * 26) * 0.06;
+      } else if (w.t < TF) {
+        p.x = w.hx - 10 + Math.sin(w.t * 30) * 8;
+        p.y = w.y0 + 28 * cl((w.t - T0) / 0.5) + Math.sin(w.t * 20) * 5;
+        w.sc = 1;
+        w.rot = Math.sin(w.t * 22) * 0.35;
+      } else {
+        p.x = w.hx - 10 + Math.sin(w.t * 24) * 8 * (1 - g);
+        p.y = w.y0 + 28 + fall * 440;
+        w.sc = 1 - 0.92 * g;
+        w.rot = g * 9 + Math.sin(w.t * 20) * 0.3 * (1 - g);
+      }
+      if (K === "blackhole" && w.t >= TF) {
+        w.bs = w.bs || { x: p.x, y: p.y };
+        let q = g * g;
+        p.x = w.bs.x + (bhx - w.bs.x) * q + Math.cos(g * 14) * 70 * (1 - g);
+        p.y = w.bs.y + (bhy - w.bs.y) * q + Math.sin(g * 14) * 50 * (1 - g);
+      }
+      if (K === "lightning" && w.t >= T0) {
+        p.x = w.hx - 10 + Math.sin(w.t * 40) * 5;
+        p.y = w.y0;
+        w.sc = 1;
+        w.rot = Math.sin(w.t * 30) * 0.2;
+      }
+      if (K === "portal" && w.t >= TF) {
+        p.x = w.hx - 10 + Math.sin(g * 18) * 26 * (1 - g);
+        p.y = w.y0 + 6 + g * 34;
+        w.sc = 1 - 0.97 * g * g;
+      }
+      w.sx = 1;
+      w.dir = 0;
+      let ang = Math.atan2(mouth.y - (p.y - 135), mouth.x - (p.x + 130));
+      p.facingAngle = Math.max(-1.35, Math.min(0.5, ang));
+      w.shotT -= t;
+      if (w.t > 0.15 && w.t < TF + 0.9 && w.shotT <= 0) {
+        w.shotT = 0.09;
+        let mz = we(p),
+          a2 = Math.atan2(mouth.y - mz.y, mouth.x - mz.x) + (e.rng.next() - 0.5) * 0.3;
+        e.bullets.push({ x: mz.x, y: mz.y, vx: Math.cos(a2) * 1100, vy: Math.sin(a2) * 1100, dmg: 0, idx: Math.min((p.weapon | 0) * 10 + Math.min(p.gun, 9), e.manifest.bullets.length - 1), life: 1.6, pierce: 0, home: 0, splash: 0, sc: 1, hitIds: [], angle: a2 });
+        e.tick % 2 === 0 && N(e, "shoot");
+      }
+    }
+    for (let b of e.bullets.slice()) {
+      b.x += b.vx * t;
+      b.y += b.vy * t;
+      b.life -= t;
+      if (Math.hypot(b.x - mouth.x, b.y - mouth.y) < 80 * s.scale) {
+        A(e, "spark", b.x, b.y, 44, 0.25);
+        s.flash = 0.08;
+        b.life = 0;
+      }
+      b.life <= 0 && (e.bullets = e.bullets.filter((u) => u !== b));
+    }
+    if (!w.mons && w.t >= T0 && K !== "lightning") w.mons = e.monsters.filter((o) => o.hp > 0).map((o, i) => ({ o, x0: o.x, y0: o.y, w0: o.w, h0: o.h, d: i * 0.1 }));
+    for (let o of e.monsters) o.age += t;
+    if (w.mons)
+      for (let r of w.mons) {
+        let o = r.o,
+          k = cl((w.t - T0 - 0.2 - r.d) / 1.8);
+        if (K === "blackhole") {
+          o.x = r.x0 + (bhx - r.x0) * k * k;
+          o.y = r.y0 + (bhy - r.y0) * k * k;
+        } else if (K === "portal") {
+          o.x = r.x0 + (w.hx - r.w0 * 0.075 - r.x0) * k;
+          o.y = r.y0 + (w.hy - r.h0 * 0.1 - r.y0) * k * k;
+        } else {
+          o.x = r.x0 + (w.hx - r.x0) * k * 0.5;
+          o.y = r.y0 + k * k * 460;
+        }
+        o.w = r.w0 * (1 - 0.85 * k);
+        o.h = r.h0 * (1 - 0.85 * k);
+        k >= 1 && e.monsters.includes(o) && (e.monsters = e.monsters.filter((u) => u !== o));
+      }
+    if (w.t >= T1 && !w.gulped) {
+      w.gulped = !0;
+      w.hide = !0;
+      K === "lightning" && (w.bolts.push({ x: w.hx, t: 0, big: 1, seed: 7.7 }), A(e, "boom", w.hx, w.hy - 60, 240, 0.5));
+      e.monsters = [];
+      N(e, "sunHit");
+      e.flash = { color: "rgba(255,255,255,0.3)", t: 0.2 };
+      he(e, T(e.lang, "AAAAH!", "AAAAH!"), w.hx, w.hy - 160, "#fde68a", 52, 1.1);
+      q(e, 1.3, s.x, s.y, 2.2, 0);
+    }
+    if (w.laugh) {
+      w.laughT -= t;
+      s.y += Math.sin(w.t * 38) * 5;
+      if (w.laughT <= 0) {
+        w.laughT = 0.42;
+        he(e, ["HA HA HA!", "HA HA!", "HAHAHAHA!"][Math.floor(e.rng.next() * 3)], s.x + e.rng.range(-80, 80), s.y - 120 - e.rng.range(0, 40), "#fde68a", 46, 1.1);
+      }
+    }
+    let f0 = T1 + 1;
+    w.bossA = w.t < f0 ? 1 : 1 - cl((w.t - f0) / (T2 - f0));
+    if (w.t >= f0 && !w.poof) {
+      w.poof = !0;
+      A(e, "sunBurst", s.x, s.y, 360, 0.7);
+    }
+    je(e, t);
+    if (w.t >= T3) gvSwEnd(e);
+  }
+  function gvBoltPts(x0, y0, x1, y1, seed, rough, iters) {
+    let pts = [[x0, y0], [x1, y1]],
+      d = Math.hypot(x1 - x0, y1 - y0) * rough;
+    for (let it = 0; it < iters; it++) {
+      let np = [pts[0]];
+      for (let i = 0; i < pts.length - 1; i++) {
+        let a = pts[i],
+          b = pts[i + 1],
+          dx = b[0] - a[0],
+          dy = b[1] - a[1],
+          l = Math.hypot(dx, dy) || 1,
+          o = (gvH(seed + it * 7.13 + i * 1.71) - 0.5) * d;
+        np.push([(a[0] + b[0]) / 2 - (dy / l) * o, (a[1] + b[1]) / 2 + (dx / l) * o], b);
+      }
+      pts = np;
+      d *= 0.52;
+    }
+    return pts;
+  }
+  function gvBoltStroke(e, pts, wid, al) {
+    e.beginPath();
+    pts.forEach((q, i) => (i ? e.lineTo(q[0], q[1]) : e.moveTo(q[0], q[1])));
+    let L = [
+      [wid * 7, "rgba(70,110,255,", 0.13],
+      [wid * 3.2, "rgba(120,170,255,", 0.3],
+      [wid * 1.5, "rgba(200,225,255,", 0.8],
+      [wid * 0.55, "rgba(255,255,255,", 1],
+    ];
+    for (let [lw, c, a] of L) {
+      e.strokeStyle = c + (a * al).toFixed(3) + ")";
+      e.lineWidth = lw;
+      e.stroke();
+    }
+  }
+  function gvBoltDraw(e, b, x1, y1, al) {
+    let seed = b.seed + Math.floor(b.t * 16) * 0.37,
+      sx = b.x + (gvH(b.seed) - 0.5) * 220,
+      pts = gvBoltPts(sx, -30, x1, y1, seed, 0.3, 6),
+      wid = b.big ? 9 : 4.5;
+    gvBoltStroke(e, pts, wid, al);
+    for (let i = 8; i < pts.length - 6; i++) {
+      if (gvH(seed * 1.3 + i * 3.7) > 0.955) {
+        let q = pts[i],
+          ang = Math.PI / 2 + (gvH(seed + i * 9.1) - 0.5) * 1.9,
+          ln = 70 + gvH(seed + i) * 170;
+        gvBoltStroke(e, gvBoltPts(q[0], q[1], q[0] + Math.cos(ang) * ln, q[1] + Math.sin(ang) * ln, seed + i, 0.4, 4), wid * 0.5, al * 0.75);
+      }
+    }
+  }
+  function gvLtDraw(e, w, t, layer) {
+    let tm = t.time,
+      cl = gvSwClamp,
+      T1 = GV_SW.roar + GV_SW.inhale,
+      st = cl((w.t - 0.15) / 1.1) * (1 - cl((w.t - T1 - 0.2) / 1.3)),
+      lit = 0;
+    for (let b of w.bolts) lit = Math.max(lit, 1 - b.t / 0.4);
+    lit = Math.max(0, lit);
+    e.save();
+    e.lineCap = "round";
+    e.lineJoin = "round";
+    if (layer === "back") {
+      e.fillStyle = `rgba(6,8,30,${(0.58 * st).toFixed(3)})`;
+      e.fillRect(0, 0, M, P);
+      for (let i = 0; i < 16; i++) {
+        let h = gvH(i * 2.3 + 1),
+          x = (i / 15) * (M + 200) - 100 + Math.sin(tm * 0.35 + i) * 50,
+          y = 10 + h * 70 + Math.sin(tm * 0.5 + i * 2) * 8,
+          r = 190 + gvH(i * 5.1) * 140,
+          g = e.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, `rgba(${(30 + lit * 130) | 0},${(34 + lit * 140) | 0},${(64 + lit * 150) | 0},${(0.95 * st).toFixed(3)})`);
+        g.addColorStop(1, "rgba(20,24,50,0)");
+        e.fillStyle = g;
+        e.beginPath();
+        e.arc(x, y, r, 0, Math.PI * 2);
+        e.fill();
+      }
+      e.strokeStyle = `rgba(190,210,255,${(0.32 * st).toFixed(3)})`;
+      e.lineWidth = 2;
+      e.beginPath();
+      for (let i = 0; i < 110; i++) {
+        let ph = (tm * 1.8 + gvH(i * 3.3)) % 1,
+          x = gvH(i * 1.9) * (M + 200) - ph * 90,
+          y = ph * (P + 80) - 40;
+        e.moveTo(x, y);
+        e.lineTo(x - 14, y + 46);
+      }
+      e.stroke();
+      e.restore();
+      return;
+    }
+    e.globalCompositeOperation = "lighter";
+    if (lit > 0.01) {
+      let g = e.createLinearGradient(0, 0, 0, P * 0.7);
+      g.addColorStop(0, `rgba(150,190,255,${(0.4 * lit).toFixed(3)})`);
+      g.addColorStop(1, "rgba(150,190,255,0)");
+      e.fillStyle = g;
+      e.fillRect(0, 0, M, P);
+    }
+    for (let b of w.bolts) {
+      if (b.t > 0.55) continue;
+      let k = b.t / 0.55,
+        al = (1 - k) * (0.55 + 0.45 * (Math.floor(b.t * 30) % 2 ? 1 : 0.35)),
+        gx = b.x,
+        gy = w.hy + 4,
+        R = (b.big ? 300 : 150) * (0.35 + k);
+      gvBoltDraw(e, b, gx, gy, al);
+      e.save();
+      e.translate(gx, gy);
+      e.scale(1, 0.3);
+      let g = e.createRadialGradient(0, 0, 0, 0, 0, R);
+      g.addColorStop(0, `rgba(255,255,255,${(0.9 * al).toFixed(3)})`);
+      g.addColorStop(0.35, `rgba(120,180,255,${(0.4 * al).toFixed(3)})`);
+      g.addColorStop(1, "rgba(60,100,255,0)");
+      e.fillStyle = g;
+      e.beginPath();
+      e.arc(0, 0, R, 0, Math.PI * 2);
+      e.fill();
+      e.strokeStyle = `rgba(190,225,255,${(0.7 * (1 - k)).toFixed(3)})`;
+      e.lineWidth = 6;
+      e.beginPath();
+      e.arc(0, 0, R * 1.1, 0, Math.PI * 2);
+      e.stroke();
+      e.restore();
+      e.strokeStyle = `rgba(255,255,255,${(0.9 * (1 - k)).toFixed(3)})`;
+      e.lineWidth = 3;
+      e.beginPath();
+      for (let j = 0; j < 16; j++) {
+        let a = gvH(b.seed + j * 2.1) * Math.PI,
+          d = 30 + gvH(b.seed + j) * 240 * k;
+        e.moveTo(gx + Math.cos(a) * d * 1.4, gy - Math.sin(a) * d);
+        e.lineTo(gx + Math.cos(a) * d * 1.2, gy - Math.sin(a) * d * 0.85);
+      }
+      e.stroke();
+    }
+    let p = t.player;
+    if (!w.hide && w.t > 0.5) {
+      let px = p.x,
+        py = p.y - 90,
+        fr = Math.floor(tm * 24),
+        pw = cl((w.t - 0.5) / 0.5);
+      if (lit > 0.2) {
+        let g = e.createRadialGradient(px, py, 0, px, py, 130);
+        g.addColorStop(0, `rgba(255,255,255,${(0.5 * lit).toFixed(3)})`);
+        g.addColorStop(1, "rgba(120,180,255,0)");
+        e.fillStyle = g;
+        e.beginPath();
+        e.arc(px, py, 130, 0, Math.PI * 2);
+        e.fill();
+      }
+      for (let i = 0; i < 5; i++) {
+        let a0 = gvH(fr * 3.1 + i) * 6.283,
+          len = 60 + gvH(fr + i * 7) * 60;
+        gvBoltStroke(e, gvBoltPts(px + Math.cos(a0) * 18, py + Math.sin(a0) * 40, px + Math.cos(a0) * len, py + Math.sin(a0) * len * 1.3, fr * 1.7 + i, 0.35, 3), 2.2, 0.9 * pw);
+      }
+    }
+    e.restore();
+  }
+  function gvPtDraw(e, w, tm, layer) {
+    let h = w.hole;
+    if (h < 0.01) return;
+    let cx = w.hx,
+      cy = w.hy + 2,
+      rx = 18 + 190 * h,
+      ry = rx * 0.3,
+      pul = 0.85 + 0.15 * Math.sin(tm * 9),
+      back = layer === "back",
+      PI = Math.PI;
+    e.save();
+    e.lineCap = "round";
+    e.globalCompositeOperation = "lighter";
+    let rim = (k, lw, al, a0, a1) => {
+      let g = e.createConicGradient ? e.createConicGradient(-tm * 2.2, cx, cy) : null;
+      if (g) {
+        g.addColorStop(0, "rgba(255,255,255,1)");
+        g.addColorStop(0.2, "rgba(90,230,255,0.95)");
+        g.addColorStop(0.5, "rgba(150,90,255,0.9)");
+        g.addColorStop(0.75, "rgba(90,230,255,0.95)");
+        g.addColorStop(1, "rgba(255,255,255,1)");
+      }
+      e.beginPath();
+      e.ellipse(cx, cy, rx * k, ry * k, 0, a0, a1);
+      e.strokeStyle = g || "rgba(120,230,255,0.95)";
+      e.globalAlpha = al * Math.min(1, h * 1.4);
+      e.lineWidth = lw;
+      e.stroke();
+      e.globalAlpha = 1;
+    };
+    if (back) {
+      e.save();
+      e.translate(cx, cy);
+      e.scale(1, 0.3);
+      let g = e.createRadialGradient(0, 0, rx * 0.4, 0, 0, rx * 2.1);
+      g.addColorStop(0, `rgba(80,220,255,${(0.6 * h * pul).toFixed(3)})`);
+      g.addColorStop(0.5, `rgba(140,80,255,${(0.28 * h).toFixed(3)})`);
+      g.addColorStop(1, "rgba(60,0,160,0)");
+      e.fillStyle = g;
+      e.beginPath();
+      e.arc(0, 0, rx * 2.1, 0, PI * 2);
+      e.fill();
+      e.restore();
+      for (let j = 0; j < 3; j++) {
+        let ph = (tm * 0.9 + j / 3) % 1;
+        e.beginPath();
+        e.ellipse(cx, cy, rx * (0.9 + ph), ry * (0.9 + ph), 0, 0, PI * 2);
+        e.strokeStyle = `rgba(140,235,255,${((1 - ph) * 0.5 * h).toFixed(3)})`;
+        e.lineWidth = 4;
+        e.stroke();
+      }
+      let ph = 560,
+        pg = e.createLinearGradient(0, cy, 0, cy - ph);
+      pg.addColorStop(0, `rgba(150,235,255,${(0.6 * h * pul).toFixed(3)})`);
+      pg.addColorStop(0.6, `rgba(140,200,255,${(0.2 * h).toFixed(3)})`);
+      pg.addColorStop(1, "rgba(140,200,255,0)");
+      e.fillStyle = pg;
+      e.beginPath();
+      e.moveTo(cx - rx * 0.85, cy);
+      e.lineTo(cx + rx * 0.85, cy);
+      e.lineTo(cx + rx * 0.4, cy - ph);
+      e.lineTo(cx - rx * 0.4, cy - ph);
+      e.fill();
+      pg = e.createLinearGradient(0, cy, 0, cy - ph);
+      pg.addColorStop(0, `rgba(255,255,255,${(0.55 * h).toFixed(3)})`);
+      pg.addColorStop(1, "rgba(255,255,255,0)");
+      e.fillStyle = pg;
+      e.beginPath();
+      e.moveTo(cx - rx * 0.3, cy);
+      e.lineTo(cx + rx * 0.3, cy);
+      e.lineTo(cx + rx * 0.12, cy - ph);
+      e.lineTo(cx - rx * 0.12, cy - ph);
+      e.fill();
+      e.strokeStyle = `rgba(225,250,255,${(0.4 * h).toFixed(3)})`;
+      e.lineWidth = 2;
+      e.beginPath();
+      for (let i = 0; i < 14; i++) {
+        let u = (tm * (0.7 + gvH(i) * 0.5) + gvH(i * 2.7)) % 1,
+          x = cx + (gvH(i * 4.1) - 0.5) * rx * 1.3 * (1 - u * 0.6);
+        e.moveTo(x, cy - u * ph);
+        e.lineTo(x, cy - u * ph - 40 - gvH(i) * 50);
+      }
+      e.stroke();
+      e.globalCompositeOperation = "source-over";
+      e.save();
+      e.translate(cx, cy);
+      e.scale(1, 0.3);
+      let vg = e.createRadialGradient(0, 0, 0, 0, 0, rx);
+      vg.addColorStop(0, "rgba(1,2,18,1)");
+      vg.addColorStop(0.6, "rgba(24,10,80,1)");
+      vg.addColorStop(1, "rgba(30,120,230,1)");
+      e.fillStyle = vg;
+      e.beginPath();
+      e.arc(0, 0, rx, 0, PI * 2);
+      e.fill();
+      e.restore();
+      e.save();
+      e.beginPath();
+      e.ellipse(cx, cy, rx * 0.98, ry * 0.98, 0, 0, PI * 2);
+      e.clip();
+      e.globalCompositeOperation = "lighter";
+      for (let j = 0; j < 5; j++) {
+        for (let pass = 0; pass < 2; pass++) {
+          e.beginPath();
+          for (let s = 0; s <= 26; s++) {
+            let u = s / 26,
+              a = j * 1.2566 + u * 5.5 - tm * 3.2;
+            e.lineTo(cx + Math.cos(a) * rx * u, cy + Math.sin(a) * ry * u);
+          }
+          e.strokeStyle = pass ? `rgba(255,255,255,${(0.45 * h).toFixed(3)})` : `rgba(110,230,255,${(0.55 * h).toFixed(3)})`;
+          e.lineWidth = pass ? 2 : rx * 0.05;
+          e.stroke();
+        }
+      }
+      e.fillStyle = "rgba(255,255,255,1)";
+      for (let i = 0; i < 26; i++) {
+        let u = (tm * 0.6 + gvH(i)) % 1,
+          a = gvH(i * 3) * 6.28 + u * 6;
+        e.globalAlpha = u * h;
+        e.fillRect(cx + Math.cos(a) * rx * (1 - u), cy + Math.sin(a) * ry * (1 - u), 3, 3);
+      }
+      e.globalAlpha = 1;
+      e.restore();
+      e.globalCompositeOperation = "lighter";
+      e.shadowColor = "rgba(90,220,255,0.9)";
+      e.shadowBlur = 22;
+      rim(1, rx * 0.075, 1, PI, PI * 2);
+      e.shadowBlur = 0;
+      e.beginPath();
+      e.ellipse(cx, cy, rx * 1.2, ry * 1.2, 0, PI, PI * 2);
+      e.setLineDash([rx * 0.07, rx * 0.09]);
+      e.lineDashOffset = -tm * 60;
+      e.strokeStyle = `rgba(170,240,255,${(0.8 * h).toFixed(3)})`;
+      e.lineWidth = 3;
+      e.stroke();
+      e.setLineDash([]);
+    } else {
+      e.shadowColor = "rgba(90,220,255,0.95)";
+      e.shadowBlur = 26;
+      rim(1, rx * 0.085, 1, 0, PI);
+      e.shadowBlur = 0;
+      rim(0.93, rx * 0.025, 0.7, 0, PI);
+      e.beginPath();
+      e.ellipse(cx, cy, rx * 1.2, ry * 1.2, 0, 0, PI);
+      e.setLineDash([rx * 0.07, rx * 0.09]);
+      e.lineDashOffset = -tm * 60;
+      e.strokeStyle = `rgba(170,240,255,${(0.8 * h).toFixed(3)})`;
+      e.lineWidth = 3;
+      e.stroke();
+      e.setLineDash([]);
+      for (let i = 0; i < 46; i++) {
+        let ph = (tm * (0.5 + gvH(i) * 0.6) + gvH(i * 2.9)) % 1,
+          a = gvH(i * 7.7) * 6.283,
+          rr = (0.3 + gvH(i * 1.3) * 0.7) * 0.9 * (1 - ph * 0.5),
+          x = cx + Math.cos(a) * rx * rr,
+          y = cy + Math.sin(a) * ry * rr - ph * (240 + gvH(i) * 200),
+          sz = 2 + 4 * (1 - ph);
+        e.fillStyle = `rgba(190,245,255,${((1 - ph) * 0.95 * h).toFixed(3)})`;
+        e.beginPath();
+        e.arc(x, y, sz, 0, PI * 2);
+        e.fill();
+      }
+    }
+    e.restore();
+  }
+  function gvDiskRings(e, R, tm, back, h) {
+    let a0 = back ? Math.PI : 0,
+      a1 = a0 + Math.PI,
+      N1 = 26;
+    for (let k = 0; k < N1; k++) {
+      let wm = k / N1,
+        r = R * (1.12 + k * 0.085),
+        g = e.createConicGradient ? e.createConicGradient(-tm * (3 - k * 0.08), 0, 0) : null;
+      if (g) {
+        let c1 = `rgba(255,${(245 - wm * 140) | 0},${(215 - wm * 90) | 0},1)`,
+          c2 = `rgba(255,${(150 - wm * 70) | 0},${(60 + wm * 120) | 0},0.85)`,
+          c3 = `rgba(${(200 - wm * 80) | 0},60,${(170 + wm * 60) | 0},0.25)`;
+        g.addColorStop(0, c1);
+        g.addColorStop(0.22, c2);
+        g.addColorStop(0.5, c3);
+        g.addColorStop(0.78, c2);
+        g.addColorStop(1, c1);
+      }
+      e.beginPath();
+      e.arc(0, 0, r, a0, a1);
+      e.strokeStyle = g || "rgba(255,150,60,0.8)";
+      e.globalAlpha = h * (1 - wm * 0.85) * 0.55;
+      e.lineWidth = R * 0.11;
+      e.stroke();
+    }
+    e.globalAlpha = 1;
+  }
+  function gvBhDraw(e, w, tm, layer) {
+    let h = w.hole;
+    if (h < 0.01) return;
+    let cx = w.bhx,
+      cy = w.bhy,
+      R = 8 + 92 * h,
+      back = layer === "back",
+      PI = Math.PI;
+    e.save();
+    e.lineCap = "round";
+    e.globalCompositeOperation = "lighter";
+    if (back) {
+      let g = e.createRadialGradient(cx, cy, R * 0.9, cx, cy, R * 4.5);
+      g.addColorStop(0, `rgba(170,90,255,${(0.6 * h).toFixed(3)})`);
+      g.addColorStop(0.35, `rgba(255,120,70,${(0.22 * h).toFixed(3)})`);
+      g.addColorStop(1, "rgba(80,20,160,0)");
+      e.fillStyle = g;
+      e.beginPath();
+      e.arc(cx, cy, R * 4.5, 0, PI * 2);
+      e.fill();
+      let cols = ["255,255,255", "130,230,255", "255,170,90"];
+      e.lineWidth = 2.5;
+      for (let i = 0; i < 70; i++) {
+        let ph = (tm * (0.28 + gvH(i) * 0.25) + gvH(i * 3.7)) % 1,
+          a0 = gvH(i * 5.3) * 6.283;
+        e.beginPath();
+        for (let k = 0; k < 7; k++) {
+          let u = ph - k * 0.025;
+          if (u < 0) break;
+          let rr = R * (1.2 + 6 * Math.pow(1 - u, 1.6)),
+            a = a0 + Math.pow(u, 1.4) * 7;
+          k ? e.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.8) : e.moveTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.8);
+        }
+        e.strokeStyle = `rgba(${cols[i % 3]},${(ph * 0.9 * h).toFixed(3)})`;
+        e.stroke();
+      }
+      e.save();
+      e.translate(cx, cy);
+      e.rotate(-0.3);
+      e.scale(1, 0.26);
+      gvDiskRings(e, R, tm, !0, h);
+      e.restore();
+      let hg = e.createConicGradient ? e.createConicGradient(-tm * 2, cx, cy) : null;
+      if (hg) {
+        hg.addColorStop(0, "rgba(255,240,210,1)");
+        hg.addColorStop(0.3, "rgba(255,140,70,0.8)");
+        hg.addColorStop(0.55, "rgba(190,90,255,0.5)");
+        hg.addColorStop(0.8, "rgba(255,150,70,0.85)");
+        hg.addColorStop(1, "rgba(255,240,210,1)");
+      }
+      e.beginPath();
+      e.arc(cx, cy, R * 1.2, 0, PI * 2);
+      e.strokeStyle = hg || "rgba(255,170,90,0.8)";
+      e.globalAlpha = 0.75 * h;
+      e.lineWidth = R * 0.16;
+      e.shadowColor = "rgba(255,150,80,0.9)";
+      e.shadowBlur = 30;
+      e.stroke();
+      e.shadowBlur = 0;
+      e.globalAlpha = 1;
+      e.globalCompositeOperation = "source-over";
+      e.fillStyle = "#000";
+      e.beginPath();
+      e.arc(cx, cy, R, 0, PI * 2);
+      e.fill();
+      e.globalCompositeOperation = "lighter";
+      e.beginPath();
+      e.arc(cx, cy, R * 1.02, 0, PI * 2);
+      e.strokeStyle = `rgba(255,235,200,${(0.95 * h).toFixed(3)})`;
+      e.lineWidth = R * 0.05;
+      e.shadowColor = "rgba(255,170,90,1)";
+      e.shadowBlur = 24;
+      e.stroke();
+      e.shadowBlur = 0;
+    } else {
+      e.save();
+      e.translate(cx, cy);
+      e.rotate(-0.3);
+      e.scale(1, 0.26);
+      gvDiskRings(e, R, tm, !1, h);
+      e.restore();
+    }
+    e.restore();
+  }
+  function gvSwBack(e, t) {
+    let w = t.sw;
+    if (t.phase !== "swallow" || !w || !w.style) return;
+    if (w.style === "lightning") gvLtDraw(e, w, t, "back");
+    else if (w.style === "portal") gvPtDraw(e, w, t.time, "back");
+    else if (w.style === "blackhole") gvBhDraw(e, w, t.time, "back");
+  }
+  function gvQkDraw(e, t) {
+    let w = t.sw,
+      cl = gvSwClamp,
+      tm = t.time;
+    if (w.style === "lightning") return gvLtDraw(e, w, t, "front");
+    if (w.style === "portal") return gvPtDraw(e, w, tm, "front");
+    if (w.style === "blackhole") return gvBhDraw(e, w, tm, "front");
+    if (w.cr < 0.01 && w.hole < 0.01) return;
+    e.save();
+    e.lineCap = "round";
+    e.lineJoin = "round";
+    let rx = 24 + 170 * w.hole,
+      ry = rx * 0.3,
+      hy = w.hy - 4;
+    for (let i = 0; i < 11; i++) {
+      let a = (i / 11) * Math.PI * 2 + gvH(i) * 0.4,
+        len = (60 + gvH(i * 3.3) * 170) * w.cr + rx * 0.5,
+        x = w.hx,
+        y = hy,
+        segs = 7;
+      e.beginPath();
+      e.moveTo(x, y);
+      for (let k = 1; k <= segs; k++) {
+        let d = (len * k) / segs,
+          jit = (gvH(i * 9.1 + k * 2.3) - 0.5) * 0.9;
+        e.lineTo(w.hx + Math.cos(a + jit) * d, hy + Math.sin(a + jit) * d * 0.32);
+      }
+      e.strokeStyle = `rgba(255,140,40,${(0.35 + 0.4 * w.cr).toFixed(3)})`;
+      e.lineWidth = 7 * (1 - w.cr * 0.3);
+      e.stroke();
+      e.strokeStyle = "rgba(25,10,5,0.95)";
+      e.lineWidth = 3;
+      e.stroke();
+    }
+    if (w.hole > 0.01) {
+      let g = e.createRadialGradient(w.hx, hy, 2, w.hx, hy, rx);
+      g.addColorStop(0, "rgba(0,0,0,1)");
+      g.addColorStop(0.75, "rgba(15,5,20,0.97)");
+      g.addColorStop(1, "rgba(255,120,30,0.85)");
+      e.fillStyle = g;
+      e.beginPath();
+      e.ellipse(w.hx, hy, rx, ry, 0, 0, Math.PI * 2);
+      e.fill();
+      e.strokeStyle = `rgba(255,170,60,${(0.8 * w.hole).toFixed(3)})`;
+      e.lineWidth = 4;
+      e.stroke();
+      for (let i = 0; i < 26; i++) {
+        let ph = (tm * (0.9 + gvH(i) * 0.8) + gvH(i * 2.7)) % 1,
+          px = w.hx + (gvH(i * 5.1) - 0.5) * rx * 1.6,
+          py = hy - ph * (90 + gvH(i * 1.9) * 120);
+        e.fillStyle = `rgba(210,170,120,${((1 - ph) * 0.8 * w.hole).toFixed(3)})`;
+        e.fillRect(px, py, 3 + gvH(i * 4.4) * 5, 3 + gvH(i * 6.6) * 4);
+      }
+    }
+    e.restore();
   }
   function gvSwTick(e, n, t) {
     let w = e.sw,
@@ -3879,6 +4551,7 @@
       T2 = T1 + D.laugh,
       T3 = T2 + D.gap;
     w.t += t;
+    if (w.style !== "swallow") return gvQkTick(e, n, t);
     let ease = (v) => v * v * (3 - 2 * v);
     e.speed = 90 * (1 - cl(w.t / T1) * 0.8);
     e.scroll += e.speed * t;
@@ -4055,6 +4728,7 @@
   }
   function gvSwDraw(e, t) {
     let w = t.sw;
+    if (t.phase === "swallow" && w && w.style !== "swallow") return gvQkDraw(e, t);
     if (t.phase !== "swallow" || !w || w.fx < 0.02) return;
     let m = gvSwMouth(t),
       tm = t.time,
@@ -8096,6 +8770,7 @@
     let s = t.monsters.slice().sort((u, c) => u.y + u.h - (c.y + c.h));
     for (let u of s) na(e, n, u, t.player.x);
     gagHats(e, t);
+    gvSwBack(e, t);
     ((t.phase !== "dead" || Math.floor(t.time * 10) % 2 === 0) && trDrawPlayer(e, n, t),
       oa(e, n, t),
       _n(e, t, n),
