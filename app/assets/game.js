@@ -1375,8 +1375,26 @@
   }
   function trDrawPlayer(e, n, t) {
     let p = t.player,
+      sw = t.phase === "swallow" && t.sw,
       ang = GT.on && p.onGround && !p.standing ? Math.atan(trSlope(p.x)) * 0.85 : 0;
-    (e.save(), e.translate(p.x, p.y), e.rotate(ang), e.translate(-p.x, -p.y), aa(e, n, t), e.restore());
+    if (sw && sw.hide) return;
+    e.save();
+    if (sw && sw.t >= GV_SW.roar) {
+      let cx = p.x + 10,
+        cy = p.y - 120;
+      (e.translate(cx, cy), e.rotate(sw.dir), e.scale(sw.sc * sw.sx, sw.sc / Math.sqrt(sw.sx)), e.rotate(sw.rot - sw.dir), e.translate(-cx, -cy));
+    } else if (sw) {
+      let cx = p.x + 10,
+        cy = p.y - 120;
+      (e.translate(cx, cy), e.rotate(sw.rot), e.translate(-cx, -cy));
+    } else if (t.appear) {
+      let k = Math.min(1, t.appear.t / 0.7),
+        b = 1 + 2.70158 * Math.pow(k - 1, 3) + 1.70158 * Math.pow(k - 1, 2),
+        cx = p.x + 10,
+        cy = p.y - 120;
+      (e.translate(cx, cy), e.scale(Math.max(0.05, b), Math.max(0.05, b)), e.translate(-cx, -cy));
+    }
+    (e.translate(p.x, p.y), e.rotate(ang), e.translate(-p.x, -p.y), aa(e, n, t), e.restore());
   }
   // ===== Random comedy gags (seeded per video) =====
   function gagS(e) {
@@ -1757,8 +1775,11 @@
       t === 0 &&
         a &&
         (o = (d = e.sceneries.find((k) => k.id === a)) != null ? d : o);
+    let gvSM = typeof window !== "undefined" && window.__gvSceneMonsters && window.__gvSceneMonsters[o.id],
+      gvSMo = typeof window !== "undefined" && window.__gvSceneMouth && window.__gvSceneMouth[o.id];
+    gvSM && gvSM.length && (i = gvSM);
     let gvIds = (typeof window !== "undefined" && window.__gvMouthIds) || [],
-      gvMouth = e.monsters.filter((k) => gvIds.includes(k.id) && !k.ranged),
+      gvMouth = e.monsters.filter((k) => (gvSMo && gvSMo.length ? gvSMo : gvIds).includes(k.id) && !k.ranged),
       gvMo = e.monsters.filter((k) => !gvIds.includes(k.id)),
       l =
         i != null && i.length ? gvMo.filter((k) => i.includes(k.id)) : [],
@@ -3225,6 +3246,7 @@
       e.banner &&
         ((e.banner.t += t), e.banner.t > e.banner.life && (e.banner = null)),
       e.fadeFrom && ((e.fadeT -= t), e.fadeT <= 0 && (e.fadeFrom = null)),
+      e.appear && ((e.appear.t += t), e.appear.t > 1.4 && (e.appear = null)),
       e.phase === "dead")
     ) {
       ((e.phaseT -= t),
@@ -3251,6 +3273,11 @@
           Hn(e));
       return;
     }
+    if (e.phase === "swallow") {
+      gvSwTick(e, n, t);
+      return;
+    }
+    gvSwDue(e) && gvSwStart(e);
     if (
       (ct(e),
       (m = e.director) != null &&
@@ -3793,6 +3820,296 @@
     A(e, "boom", boss.x - 40, boss.y + 30, 120, 0.4);
     H(e, T(e.lang, "Boss nh\u1EA3 qu\xE1i!", "Boss spits monsters!"), T(e.lang, `${want} qu\xE1i \u0111ang r\u01A1i xu\u1ED1ng`, `${want} monsters falling`), 1.4);
     he(e, T(e.lang, "NH\u1EA2!", "SPIT!"), boss.x - 40, boss.y - 20, "#fca5a5", 30, 1);
+  }
+  // ===== Boss nuốt nhân vật để chuyển sang cảnh mới (chỉ khi kịch bản có >= 2 cảnh) =====
+  var GV_SW = { windup: 0.5, roar: 1.9, inhale: 3.2, laugh: 1.8, gap: 0.35, lead: 4 };
+  function gvH(x) {
+    let s = Math.sin(x * 127.1) * 43758.5453;
+    return s - Math.floor(s);
+  }
+  function gvSwClamp(v) {
+    return Math.max(0, Math.min(1, v));
+  }
+  function gvSwMouth(e) {
+    let s = e.sun;
+    return { x: s.x - 14 * s.scale, y: s.y + 34 * s.scale };
+  }
+  function gvSwDue(e) {
+    let d = e.director;
+    if (typeof window !== "undefined" && window.__gvNoSwallow) return !1;
+    if (!d || e.phase !== "play" || d.result || d.scenario.outcome === "natural" || e.strike) return !1;
+    if (e.stage >= d.stages - 1 || !e.sun || e.sun.hp <= 0 || e.sun.tpT > 0) return !1;
+    let s = fn(d, e.stage, d.stageStart);
+    return e.time >= Math.max(d.stageStart + 6, s - GV_SW.lead);
+  }
+  function gvSwStart(e) {
+    let p = e.player,
+      s = e.sun;
+    e.phase = "swallow";
+    e.phaseT = 0;
+    e.sw = { t: 0, x0: p.x, y0: p.y, bx0: s.x, by0: s.y, sc0: s.scale, rot: 0, sx: 1, sy: 1, sc: 1, dir: 0, bossA: 1, fx: 0, hide: !1, laugh: !1, shotT: 0, ringT: 0, laughT: 0, gulped: !1, roared: !1, mons: null, poof: !1 };
+    e.fireballs = [];
+    e.bolts = [];
+    e.pickups = [];
+    e.platforms = [];
+    e.meteors = [];
+    p.standing = null;
+    p.vx = 0;
+    p.vy = 0;
+    p.invuln = 999;
+    s.tpT = 0;
+    s.rageT = 0;
+    N(e, "roar");
+    H(
+      e,
+      T(e.lang, "BOSS PH\u00C1T \u0110I\u00CAN!", "THE BOSS SNAPS!"),
+      T(e.lang, "B\u1EAFn m\u00E3i kh\u00F4ng ch\u1EBFt... n\u00F3 h\u00E1 m\u1ED3m ra!", "It can't finish you off... so it opens wide!"),
+      2.6,
+    );
+    q(e, 1.12, M * 0.6, E * 0.42, 1.9, 0);
+  }
+  function gvSwTick(e, n, t) {
+    let w = e.sw,
+      p = e.player,
+      s = e.sun,
+      D = GV_SW,
+      cl = gvSwClamp,
+      T0 = D.roar,
+      T1 = T0 + D.inhale,
+      T2 = T1 + D.laugh,
+      T3 = T2 + D.gap;
+    w.t += t;
+    let ease = (v) => v * v * (3 - 2 * v);
+    e.speed = 90 * (1 - cl(w.t / T1) * 0.8);
+    e.scroll += e.speed * t;
+    // Boss tiến vào giữa màn hình rồi phồng to
+    let m1 = ease(cl(w.t / 1)),
+      tgtScale;
+    s.x = w.bx0 + (M - 270 - w.bx0) * m1;
+    s.y = w.by0 + (250 - w.by0) * m1 + Math.sin(w.t * 1.3) * 6;
+    if (w.t < D.windup) tgtScale = w.sc0 * 0.85;
+    else if (w.t < T1) tgtScale = 1.55 + Math.sin(w.t * 30) * 0.04;
+    else if (w.t < T2) tgtScale = 1.2 + Math.abs(Math.sin((w.t - T1) * 7)) * 0.16;
+    else tgtScale = 0.4;
+    s.scale += (tgtScale - s.scale) * Math.min(1, t * (w.t < D.windup ? 6 : 9));
+    s.spitT = w.t >= D.windup && w.t < T1 + 0.2 ? 0.3 : 0;
+    s.flash = Math.max(0, s.flash - t);
+    w.laugh = w.t >= T1 + 0.25 && w.t < T2;
+    // Tiếng gầm: rung màn hình tăng dần, sóng xung kích từ miệng
+    let mouth = gvSwMouth(e);
+    if (w.t >= D.windup && !w.roared) {
+      w.roared = !0;
+      N(e, "roar");
+      e.flash = { color: "rgba(255,60,40,0.28)", t: 0.35 };
+      he(e, T(e.lang, "GRAOOOO!", "ROAAAAR!"), s.x, s.y - 150, "#fca5a5", 64, 1.6);
+    }
+    if (w.t < D.windup) e.shake = 0.35;
+    else if (w.t < T0) e.shake = 0.7 + 1.5 * cl((w.t - D.windup) / 0.8);
+    else if (w.t < T1) e.shake = 1.1 + 0.25 * Math.sin(w.t * 25);
+    else e.shake = Math.max(e.shake, 0.4 * (1 - cl((w.t - T1) / 0.9)));
+    w.ringT -= t;
+    if (w.t >= D.windup && w.t < T1 && w.ringT <= 0) {
+      w.ringT = 0.3;
+      A(e, "ring", mouth.x, mouth.y, 240, 0.55);
+    }
+    w.fx = w.t < D.windup ? 0 : w.t < T0 ? 0.25 * cl((w.t - D.windup) / (T0 - D.windup)) : w.t < T1 ? 0.25 + 0.75 * cl((w.t - T0) / 0.8) : 1 - cl((w.t - T1) / 0.7);
+
+    // Nhân vật: cố bắn trả / quẫy đạp, sau đó bị hút, thu nhỏ, xoay và kéo dãn
+    let inh = cl((w.t - T0) / D.inhale);
+    if (!w.hide) {
+      if (w.t < T0) {
+        p.runPhase += t * 9;
+        p.x = w.x0 - cl((w.t - D.windup) / 1.2) * 22 + Math.sin(w.t * 40) * 2.5 * cl((w.t - D.windup) / 0.5);
+        p.y = w.y0;
+        w.sc = 1;
+        w.rot = Math.sin(w.t * 26) * 0.05 * cl((w.t - D.windup) / 0.6);
+        w.dir = 0;
+        w.sx = 1;
+      } else {
+        p.onGround = !1;
+        p.vy = Math.sin(w.t * 17) > 0 ? 1 : -1;
+        let u = cl((inh - 0.16) / 0.84),
+          g = Math.pow(u, 2.1),
+          ex = mouth.x - 10,
+          ey = mouth.y + 120,
+          cx = (w.x0 + ex) / 2,
+          cy = Math.min(w.y0, ey) - 160,
+          lift = ease(cl(inh / 0.3)) * 80 * (1 - g);
+        p.x = (1 - g) * (1 - g) * w.x0 + 2 * (1 - g) * g * cx + g * g * ex + Math.sin(w.t * 24) * 7 * (1 - g);
+        p.y = (1 - g) * (1 - g) * w.y0 + 2 * (1 - g) * g * cy + g * g * ey - lift;
+        w.sc = 1 - 0.88 * g;
+        w.sx = 1 + 0.55 * g;
+        w.rot = g * g * Math.PI * 8 + Math.sin(w.t * 20) * 0.28 * (1 - g);
+        w.dir = Math.atan2(ey - 120 - (p.y - 120), ex - p.x);
+      }
+      let ang = Math.atan2(mouth.y - (p.y - 135), mouth.x - (p.x + 130));
+      p.facingAngle = Math.max(-1.35, Math.min(0.5, ang));
+      // Bắn đạn liên tục về phía miệng boss
+      w.shotT -= t;
+      if (w.t > 0.15 && w.t < T1 - 0.6 && w.shotT <= 0) {
+        w.shotT = 0.09;
+        let mz = we(p),
+          a2 = Math.atan2(mouth.y - mz.y, mouth.x - mz.x) + (e.rng.next() - 0.5) * 0.3;
+        e.bullets.push({
+          x: mz.x,
+          y: mz.y,
+          vx: Math.cos(a2) * 1100,
+          vy: Math.sin(a2) * 1100,
+          dmg: 0,
+          idx: Math.min((p.weapon | 0) * 10 + Math.min(p.gun, 9), e.manifest.bullets.length - 1),
+          life: 1.6,
+          pierce: 0,
+          home: 0,
+          splash: 0,
+          sc: 1,
+          hitIds: [],
+          angle: a2,
+        });
+        e.tick % 2 === 0 && N(e, "shoot");
+      }
+    }
+    for (let b of e.bullets.slice()) {
+      b.x += b.vx * t;
+      b.y += b.vy * t;
+      b.life -= t;
+      if (Math.hypot(b.x - mouth.x, b.y - mouth.y) < 80 * s.scale) {
+        A(e, "spark", b.x, b.y, 44, 0.25);
+        s.flash = 0.08;
+        b.life = 0;
+      }
+      b.life <= 0 && (e.bullets = e.bullets.filter((u) => u !== b));
+    }
+    // Quái trên màn hình cũng bị gió cuốn vào mồm
+    if (!w.mons && w.t >= T0) w.mons = e.monsters.filter((o) => o.hp > 0).map((o, i) => ({ o, x0: o.x, y0: o.y, w0: o.w, h0: o.h, d: i * 0.12 }));
+    for (let o of e.monsters) o.age += t;
+    if (w.mons)
+      for (let r of w.mons) {
+        let o = r.o,
+          k = cl((w.t - T0 - 0.3 - r.d) / 2.1);
+        o.x = r.x0 + (mouth.x - r.x0) * k * k;
+        o.y = r.y0 + (mouth.y - r.y0) * k * k - Math.sin(Math.PI * k) * 80;
+        o.w = r.w0 * (1 - 0.88 * k);
+        o.h = r.h0 * (1 - 0.88 * k);
+        if (k >= 1 && e.monsters.includes(o)) {
+          e.monsters = e.monsters.filter((u) => u !== o);
+          A(e, "ring", mouth.x, mouth.y, 90, 0.3);
+        }
+      }
+    // Nuốt chửng
+    if (w.t >= T1 && !w.gulped) {
+      w.gulped = !0;
+      w.hide = !0;
+      e.monsters = [];
+      N(e, "sunHit");
+      e.flash = { color: "rgba(255,255,255,0.3)", t: 0.2 };
+      A(e, "boom", mouth.x, mouth.y, 200, 0.45);
+      he(e, "GULP!", s.x, s.y + 40, "#fde68a", 52, 1.1);
+      q(e, 1.3, s.x, s.y, 2.2, 0);
+    }
+    // Boss cười ha hả rồi tan biến
+    if (w.laugh) {
+      w.laughT -= t;
+      s.y += Math.sin(w.t * 38) * 5;
+      if (w.laughT <= 0) {
+        w.laughT = 0.42;
+        he(e, ["HA HA HA!", "HA HA!", "HAHAHAHA!"][Math.floor(e.rng.next() * 3)], s.x + e.rng.range(-80, 80), s.y - 120 - e.rng.range(0, 40), "#fde68a", 46, 1.1);
+      }
+    }
+    let f0 = T1 + 1;
+    w.bossA = w.t < f0 ? 1 : 1 - cl((w.t - f0) / (T2 - f0));
+    if (w.t >= f0 && !w.poof) {
+      w.poof = !0;
+      A(e, "sunBurst", s.x, s.y, 360, 0.7);
+    }
+    je(e, t);
+    if (w.t >= T3) gvSwEnd(e);
+  }
+  function gvSwEnd(e) {
+    let p = e.player;
+    e.sw = null;
+    e.bullets = [];
+    Hn(e);
+    p.x = 360;
+    p.y = trY(360) - 40;
+    p.vx = 0;
+    p.vy = 0;
+    p.onGround = !1;
+    p.standing = null;
+    p.jumpsLeft = 2;
+    p.invuln = 2.5;
+    p.hurtFlash = 0;
+    e.appear = { t: 0 };
+    e.shake = 0.35;
+    e.flash = { color: "rgba(255,255,255,0.45)", t: 0.45 };
+    A(e, "ring", p.x, p.y - 100, 300, 0.7);
+    A(e, "sunBurst", e.sun.x, e.sun.y, 320, 0.7);
+    H(
+      e,
+      `${T(e.lang, "M\u00E0n", "Stage")} ${e.stage + 1} \u00B7 ${e.plan.scenery.id}`,
+      T(e.lang, `${z(e)} nu\u1ED1t b\u1EA1n sang v\u00F9ng \u0111\u1EA5t m\u1EDBi!`, `${z(e)} swallowed you into a new land!`),
+    );
+  }
+  function gvSwAlpha(e) {
+    let a = e.phase === "swallow" && e.sw ? e.sw.bossA : 1;
+    return e.appear ? a * Math.min(1, e.appear.t / 1) : a;
+  }
+  function gvSwDraw(e, t) {
+    let w = t.sw;
+    if (t.phase !== "swallow" || !w || w.fx < 0.02) return;
+    let m = gvSwMouth(t),
+      tm = t.time,
+      N0 = 90;
+    e.save();
+    e.lineCap = "round";
+    for (let i = 0; i < N0; i++) {
+      let h1 = gvH(i * 1.7),
+        h2 = gvH(i * 3.1 + 5),
+        h3 = gvH(i * 7.3 + 2),
+        h4 = gvH(i * 5.9 + 1),
+        ph = (tm * (0.55 + h3 * 0.5) + h1) % 1,
+        sx = 20 + h2 * Math.max(200, m.x - 220),
+        sy = 70 + h4 * (P - 90),
+        dx = m.x - sx,
+        dy = m.y - sy,
+        len = Math.hypot(dx, dy) || 1,
+        nx = -dy / len,
+        ny = dx / len,
+        pt = (k) => {
+          let g = Math.pow(Math.max(0, k), 1.7),
+            sw = (1 - g) * Math.sin(k * 6 + i) * 34;
+          return [sx + dx * g + nx * sw, sy + dy * g + ny * sw, g];
+        },
+        [x1, y1, g1] = pt(ph),
+        [x0, y0] = pt(ph - 0.08),
+        al = w.fx * Math.min(1, ph * 6) * (0.3 + 0.5 * g1);
+      e.strokeStyle = `rgba(235,240,255,${al.toFixed(3)})`;
+      e.lineWidth = 1.5 + 2.5 * g1;
+      e.beginPath();
+      e.moveTo(x0, y0);
+      e.lineTo(x1, y1);
+      e.stroke();
+      if (i % 3 === 0) {
+        e.fillStyle = `rgba(215,190,150,${(al * 0.9).toFixed(3)})`;
+        e.beginPath();
+        e.arc(x1, y1, 2 + h2 * 3 * (1 - g1 * 0.5), 0, Math.PI * 2);
+        e.fill();
+      }
+    }
+    let gl = e.createRadialGradient(m.x, m.y, 4, m.x, m.y, 150 * t.sun.scale);
+    gl.addColorStop(0, `rgba(10,0,20,${(0.55 * w.fx).toFixed(3)})`);
+    gl.addColorStop(1, "rgba(10,0,20,0)");
+    e.fillStyle = gl;
+    e.beginPath();
+    e.arc(m.x, m.y, 150 * t.sun.scale, 0, Math.PI * 2);
+    e.fill();
+    e.lineWidth = 3;
+    for (let k = 0; k < 4; k++) {
+      e.strokeStyle = `rgba(230,225,255,${(0.35 * w.fx).toFixed(3)})`;
+      e.beginPath();
+      e.arc(m.x, m.y, 40 + k * 30, tm * 7 + k * 1.6, tm * 7 + k * 1.6 + 2.2);
+      e.stroke();
+    }
+    e.restore();
   }
   function gvMark(e, o, n0) {
     if (o.blessed) for (let i = n0; i < e.fireballs.length; i++) e.fireballs[i].blessed = !0;
@@ -4578,6 +4895,7 @@
       r = X(t.bossId),
       s = r.moods[Math.min(r.moods.length - 1, Math.floor(i * r.moods.length))];
     a.spitT > 0 && (s = r.spit);
+    t.phase === "swallow" && t.sw && t.sw.laugh && (s = r.moods[0]);
     let o = G(n, s),
       [l, u, c] = r.glow,
       h = t.phase === "transition",
@@ -4587,7 +4905,7 @@
         a.tpT > 0
           ? Math.abs(Math.sin((a.tpT / 0.5) * Math.PI * 4)) * 0.5 + 0.1
           : 1,
-      g = (h ? Math.max(0, 1 - a.deathT / 2.4) : 1) * k;
+      g = (h ? Math.max(0, 1 - a.deathT / 2.4) : 1) * k * gvSwAlpha(t);
     (e.save(), (e.globalAlpha = g));
     let y = e.createRadialGradient(
       a.x,
@@ -7783,6 +8101,7 @@
       _n(e, t, n),
       ra(e, n, t),
       ia(e, n, t),
+      gvSwDraw(e, t),
       skDraw(e, t),
       trWeather(e, t),
       gagDraw(e, t));
