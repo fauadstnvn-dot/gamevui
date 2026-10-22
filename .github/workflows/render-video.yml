@@ -21,6 +21,21 @@ on:
         description: "Đăng thêm YouTube Short (cắt phân cảnh + biểu ngữ) sau video chính (true/false)"
         required: false
         default: "true"
+      short_types:
+        description: "Loại Short: predict (đoán ai thắng, không lộ kết quả), highlight (cú quyết định), hoặc predict,highlight"
+        required: false
+        default: "predict,highlight"
+      drama:
+        description: "Kiểu trận: close (chỉ sát nút/đảo chiều), mixed (nghiêng về kịch tính), any (để game tự bốc thăm)"
+        type: choice
+        required: false
+        default: mixed
+        options: [mixed, close, any]
+      teaser:
+        description: "Chiếu teaser 2-3 giây căng nhất của trận ngay đầu video (cần bật intro hoặc outro)"
+        type: boolean
+        required: false
+        default: true
       privacy:
         description: "Chế độ hiển thị: public / unlisted / private"
         required: false
@@ -116,7 +131,7 @@ jobs:
           ARGS=""
           [ -n "${{ inputs.seed }}" ] && ARGS="$ARGS --seed ${{ inputs.seed }}"
           [ -n "${{ inputs.duration }}" ] && ARGS="$ARGS --duration ${{ inputs.duration }}"
-          python -m render.prepare --plan plan.json $ARGS
+          python -m render.prepare --plan plan.json --drama "${{ inputs.drama || 'mixed' }}" $ARGS
 
       - name: Dựng video 2K bằng game gốc (thanh máu, chữ, hiệu ứng, âm thanh)
         run: node runner/render.mjs --plan plan.json --out output --width 2560 --height 1440 --fps ${{ inputs.fps || 30 }} --timeout 340
@@ -135,7 +150,7 @@ jobs:
           CHANNEL_NAME: ${{ inputs.channel_name || vars.CHANNEL_NAME || '' }}
         run: >
           node runner/intro.mjs --plan plan.json --out output --width 2560 --height 1440 --fps ${{ inputs.fps || 30 }}
-          --intro "$INTRO_ON" --outro "$OUTRO_ON"
+          --intro "$INTRO_ON" --outro "$OUTRO_ON" --teaser "${{ github.event_name == 'workflow_dispatch' && inputs.teaser == false && 'false' || 'true' }}"
           --style "$INTRO_STYLE" --countdown "$INTRO_COUNTDOWN"
           --outro-style "$OUTRO_STYLE" --stats-style "$STATS_STYLE" --cta-style "$CTA_STYLE"
 
@@ -149,7 +164,7 @@ jobs:
           DB_NAME: ${{ secrets.DB_NAME }}
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASS: ${{ secrets.DB_PASS }}
-        run: python -m render.publish --dir output --category 20 --privacy ${{ inputs.privacy || 'public' }} ${{ inputs.short == 'false' && '--no-short' || '' }}
+        run: python -m render.publish --dir output --category 20 --privacy ${{ inputs.privacy || 'public' }} ${{ inputs.short == 'false' && '--no-short' || '' }} --short-types "${{ inputs.short_types || 'predict,highlight' }}"
 
       - name: Xóa kịch bản ưu tiên và cảnh chon-canh-vat đã dùng (sau khi upload thành công)
         if: ${{ success() && (steps.publish.outcome == 'success' || inputs.upload == 'false') }}
