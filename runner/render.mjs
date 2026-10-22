@@ -220,11 +220,19 @@ await page.evaluate(
   },
 )
 
-await page.evaluate((ids) => { window.__gvMouthIds = ids }, (plan.mouthMonsters ?? []).map(stem))
+const sceneries = (plan.sceneries?.length ? plan.sceneries : [plan.scenery]).map(stem)
+await page.evaluate(
+  ({ ids, sceneMonsters, sceneMouth }) => {
+    window.__gvMouthIds = ids
+    window.__gvSceneMonsters = sceneMonsters
+    window.__gvSceneMouth = sceneMouth
+  },
+  { ids: (plan.mouthMonsters ?? []).map(stem), sceneMonsters: plan.sceneMonsters ?? {}, sceneMouth: plan.sceneMouth ?? {} },
+)
 
 for (const box of ['#sceneries', '#monsters']) {
   const names = await page.$$eval(`${box} button.chip`, (b) => b.map((x) => x.querySelector('span').textContent))
-  const wanted = box === '#sceneries' ? [stem(plan.scenery)] : plan.monsters.map(stem)
+  const wanted = box === '#sceneries' ? sceneries : plan.monsters.map(stem)
   for (const w of wanted) {
     const idx = names.findIndex((n) => n.toLowerCase().includes(w.toLowerCase()))
     if (idx < 0) throw new Error(`Không thấy ${w} trong ${box}`)
@@ -264,6 +272,7 @@ const meta = {
   resolution: `${width}x${height}`,
   fps,
   scenery: plan.scenery,
+  sceneries: plan.sceneries ?? [plan.scenery],
   mount: plan.mount,
   boss: plan.boss,
   monsters: plan.monsters,
