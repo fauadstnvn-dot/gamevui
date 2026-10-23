@@ -996,6 +996,43 @@
     ctx.restore()
   }
 
+  // Câu đố gà vàng: gài bình luận ở phần thống kê, tiết lộ giây xuất hiện ở phần kêu gọi.
+  function goldenBait(t) {
+    const o = cfg.outro
+    if (!Number.isFinite(o.golden)) return
+    const inStats = t >= TL.statsAt && t < TL.ctaAt
+    const inCta = t >= TL.ctaAt
+    if (!inStats && !inCta) return
+    const lt = inStats ? t - TL.statsAt : t - TL.ctaAt
+    const fadeOut = inStats ? 1 - clamp((t - (TL.ctaAt - 0.5)) / 0.3) : 1 - clamp((t - (TL.end - 1.2)) / 0.5)
+    const a = clamp((lt - 0.6) / 0.35) * fadeOut
+    if (a <= 0) return
+    const total = Math.round(o.golden)
+    const stamp = `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+    const reveal = inCta && lt > 1.6
+    const msg = reveal ? `THE GOLDEN CHICKEN RAN BY AT ${stamp}!` : 'DID YOU SPOT THE GOLDEN CHICKEN? COMMENT THE SECOND!'
+    const pop = easeOutBack(clamp((lt - 0.6) / 0.5))
+    const pulse = 1 + Math.sin(t * 6) * 0.015
+    ctx.save()
+    ctx.globalAlpha = a
+    ctx.translate(W / 2, H - 78)
+    ctx.scale(pop * pulse, pop * pulse)
+    ctx.font = fontOf(46, 'Anton')
+    const w = Math.min(W - 160, ctx.measureText(msg).width + 120)
+    ctx.fillStyle = 'rgba(21,6,17,0.78)'
+    ctx.beginPath()
+    ctx.roundRect(-w / 2, -42, w, 84, 42)
+    ctx.fill()
+    ctx.lineWidth = 4
+    ctx.strokeStyle = '#ffd23d'
+    ctx.stroke()
+    ctx.restore()
+    ctx.save()
+    ctx.globalAlpha = a
+    ftext(msg, W / 2, H - 78, 46, { maxW: W - 220, stroke: '#150611', sw: 8, glow: '#ffd23d', glowBlur: 18, grad: ['#fff6c2', '#ffd23d'] })
+    ctx.restore()
+  }
+
   function frame(t) {
     bind()
     ctx.setTransform(K.scale, 0, 0, K.scale, 0, 0)
@@ -1010,6 +1047,7 @@
     ctx.restore()
     wipe(t, TL.statsAt)
     wipe(t, TL.ctaAt)
+    goldenBait(t)
     vignette()
     if (t < 0.3) {
       ctx.fillStyle = `rgba(0,0,0,${1 - t / 0.3})`
