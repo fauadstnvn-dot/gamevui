@@ -115,6 +115,7 @@ function buildStats(kind) {
   }
   if (s) {
     add('kills', 'MONSTERS SLAIN', s.kills, 'int', 'IN ONE EPIC BATTLE')
+    add('fled', 'MONSTERS RAN AWAY', s.fled, 'int', 'WAVING THE WHITE FLAG')
     add('boss', `${names.B} DEFEATED`, s.sunKills, 'int', 'TIMES THE BOSS WENT DOWN')
     add('score', 'FINAL SCORE', s.score, 'int', 'POINTS EARNED')
     add('coins', 'COINS COLLECTED', s.coins, 'int', 'SHINY COINS')
@@ -278,6 +279,11 @@ if (wantIntro) {
   introSeconds = await renderSegment('intro', introMp4)
 }
 if (wantOutro) {
+  const goldenSec = meta?.stats?.golden
+  if (Number.isFinite(goldenSec)) {
+    outro.golden = teaserSeconds + introSeconds + goldenSec
+    console.log(`Gà vàng xuất hiện ở ${outro.golden.toFixed(1)}s trong video cuối`)
+  }
   console.log(`Kết thúc: kiểu ${outroKind}, thống kê ${statsKind}, kêu gọi ${ctaKind}, bên thắng ${winner}, trả lời "${outro.answer}"${meta?.stats ? '' : ' (không có thống kê thật, dùng thông tin kế hoạch)'}`)
   outroSeconds = await renderSegment('outro', outroMp4)
 }
