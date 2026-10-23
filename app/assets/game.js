@@ -5066,6 +5066,30 @@
         o.x < -o.w && (e.monsters = e.monsters.filter((u) => u !== o));
         continue;
       }
+      if (o.slipT > 0) {
+        o.slipT = Math.max(0, o.slipT - n);
+        o.cooldown = Math.max(o.cooldown, 0.25);
+        o.x += Math.sign(t.x - o.x) * 150 * n;
+        continue;
+      }
+      if (gagOn() && o.state === "move" && o.def.kind !== "fly" && !o.slipped && !o.fled && !o.burrowed && o.hp > 0) {
+        let gg = gagS(e);
+        for (let it of gg.items) {
+          if (it.b < 1 || it.y < P + trOff(it.wx) - 12 - 45) continue;
+          if (Math.abs(it.wx - GT.scroll - o.x) > o.w * 0.35 + 16) continue;
+          o.slipped = !0;
+          o.slipT = 1.2;
+          e.slipCount = (e.slipCount || 0) + 1;
+          it.vy = -650;
+          it.vx = Math.sign(t.x - o.x) * 320;
+          it.vr = 9;
+          it.b = 1;
+          N(e, "gagBoing");
+          he(e, T(e.lang, "TRƯỢT VỎ!", "SLIPPED!"), o.x, o.y - o.h * 0.8, "#ffe066", 34, 1);
+          break;
+        }
+        if (o.slipped) continue;
+      }
       if (o.fled) {
         o.x += (a * 0.45 + 250 + o.ownVx) * n;
         o.y = o.def.kind === "fly" ? o.baseY + Math.sin(o.age * 3 + o.phase) * 38 : o.baseY + Math.abs(Math.sin(o.age * 14)) * -14;
@@ -6439,9 +6463,13 @@
       let gvTxt = `\u25B2 ${t.blessLabel || "BLESSED"} \u25B2`;
       (e.strokeText(gvTxt, gvX, gvLy), e.fillText(gvTxt, gvX, gvLy), e.restore());
     }
-    let f = (b, x, $, I, B) => {
+    let gvSp = t.slipT > 0 ? 1 - t.slipT / 1.2 : 0,
+      gvSa = -h * Math.sin(gvSp * Math.PI) * 2.6,
+      gvSh = Math.sin(gvSp * Math.PI) * t.h * 0.3,
+      f = (b, x, $, I, B) => {
         (e.save(),
-          e.translate(t.x + b, t.y + t.h / 2 - 8),
+          e.translate(t.x + b, t.y + t.h / 2 - 8 - gvSh),
+          gvSp > 0 && (e.translate(0, -t.h / 2), e.rotate(gvSa), e.translate(0, t.h / 2)),
           (e.globalAlpha = x),
           B ? (e.filter = B) : t.flash > 0 && (e.filter = "brightness(2.2)"),
           t.elite && !B && ((e.shadowColor = "#ffcf33"), (e.shadowBlur = 24)),
