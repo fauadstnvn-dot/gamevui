@@ -293,7 +293,7 @@ server.close()
 const meta = {
   result: snap?.result ?? null,
   stats: snap
-    ? { kills: snap.kills, sunKills: snap.sunKills, score: snap.score, coins: snap.coins, time: snap.time, stage: snap.stage, stages: snap.stages, hp: snap.hp }
+    ? { kills: snap.kills, fled: snap.fled, golden: snap.golden, sunKills: snap.sunKills, score: snap.score, coins: snap.coins, time: snap.time, stage: snap.stage, stages: snap.stages, hp: snap.hp }
     : null,
   seed: plan.seed,
   duration: plan.duration,
