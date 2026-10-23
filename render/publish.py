@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 import time
@@ -147,18 +148,57 @@ def cleanup(meta_path: Path, mp4: Path) -> None:
     print("Đã xóa video và các file tạm sau khi upload thành công")
 
 
+def _sanitize_snippet(info: dict, with_tags: bool = True) -> dict:
+    """Làm sạch tiêu đề/mô tả/tag theo luật YouTube (không < >, tiêu đề <=100 ký tự, tag <=500 ký tự)."""
+    def strip(text: str) -> str:
+        return re.sub(r"[<>\x00-\x08\x0b\x0c\x0e-\x1f]", "", str(text or "")).replace("\r", "")
+
+    title = " ".join(strip(info.get("title")).split())
+    if len(title) > 100:
+        title = title[:100].rsplit(" ", 1)[0]
+    desc = strip(info.get("description"))
+    while len(desc.encode("utf-8")) > 4900:
+        desc = desc[:-100]
+    tags, seen, total = [], set(), 0
+    if with_tags:
+        for t in info.get("tags") or []:
+            t = re.sub(r"[<>\",#]", "", str(t)).strip()
+            if not t or len(t) > 30 or t.lower() in seen:
+                continue
+            if total + len(t) + 3 > 450:
+                break
+            seen.add(t.lower())
+            tags.append(t)
+            total += len(t) + 3
+    return {"title": title or "Boss Battle", "description": desc.strip(), "tags": tags}
+
+
 def upload(access_token: str, mp4: Path, info: dict, privacy: str, category: str, kids: bool) -> str:
+    try:
+        return _upload(access_token, mp4, _sanitize_snippet(info), privacy, category, kids)
+    except requests.HTTPError as exc:
+        if exc.response is None or exc.response.status_code != 400:
+            raise
+        print(f"  ! YouTube trả 400 ({exc.response.text[:300]}), thử lại không tag/ngôn ngữ…")
+        return _upload(access_token, mp4, _sanitize_snippet(info, with_tags=False), privacy, category, kids,
+                       minimal=True)
+
+
+def _upload(access_token: str, mp4: Path, info: dict, privacy: str, category: str, kids: bool,
+            minimal: bool = False) -> str:
     body = {
         "snippet": {
             "title": info["title"],
             "description": info["description"],
-            "tags": info["tags"],
-            "categoryId": category,
-            "defaultLanguage": "en",
-            "defaultAudioLanguage": "en",
+            "categoryId": str(category),
         },
         "status": {"privacyStatus": privacy, "selfDeclaredMadeForKids": kids},
     }
+    if info["tags"]:
+        body["snippet"]["tags"] = info["tags"]
+    if not minimal:
+        body["snippet"]["defaultLanguage"] = "en"
+        body["snippet"]["defaultAudioLanguage"] = "en"
     size = mp4.stat().st_size
     init = requests.post(UPLOAD_URL, json=body, timeout=60, headers={
         "Authorization": f"Bearer {access_token}",
@@ -167,7 +207,8 @@ def upload(access_token: str, mp4: Path, info: dict, privacy: str, category: str
     })
     if init.status_code in (401, 403):
         raise AccountError(f"YouTube từ chối ({init.status_code}): {init.text[:300]}")
-    init.raise_for_status()
+    if not init.ok:
+        raise requests.HTTPError(f"{init.status_code}: {init.text[:500]}", response=init)
     location = init.headers["Location"]
     for attempt in range(3):
         with mp4.open("rb") as fh:
