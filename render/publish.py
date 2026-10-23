@@ -251,8 +251,13 @@ def main_comment(meta: dict) -> str:
     """Bình luận đầu tiên dưới video chính để mở màn thảo luận bằng một lựa chọn 1 / 2."""
     mount = pretty(str(meta.get("mount", ""))) or "Hero"
     boss = pretty(str(meta.get("boss", ""))) or "Boss"
-    return (f"Who did you pick before the fight? Type 1 for {mount} or 2 for {boss}. "
+    text = (f"Who did you pick before the fight? Type 1 for {mount} or 2 for {boss}. "
             f"Did the ending surprise you? Tell me below, and subscribe for the next battle!")
+    golden = (meta.get("goldenChicken") or {}).get("seconds")
+    if isinstance(golden, (int, float)) and golden >= 0:
+        text += (" Bonus puzzle: a tiny GOLDEN CHICKEN runs across the screen once in this video. "
+                 "Comment the exact second you spotted it - the answer is revealed at the end!")
+    return text
 
 
 def short_package(kind: str, meta: dict, info: dict, main_url: str) -> dict:
