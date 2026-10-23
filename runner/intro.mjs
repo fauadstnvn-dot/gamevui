@@ -334,6 +334,7 @@ fs.rmSync(outroMp4, { force: true })
 if (meta) {
   meta.baseDuration = meta.baseDuration ?? meta.duration
   meta.duration = Math.round(meta.baseDuration + teaserSeconds + introSeconds + outroSeconds)
+  if (Number.isFinite(meta.stats?.golden)) meta.goldenChicken = { seconds: Math.round((teaserSeconds + introSeconds + meta.stats.golden) * 10) / 10 }
   if (teaserSeconds > 0) meta.teaser = { seconds: teaserSeconds }
   if (wantIntro) meta.intro = { style, countdown, question, ready: readyText, go: goText, seconds: introSeconds }
   if (wantOutro) meta.outro = { kind: outroKind, stats: statsKind, cta: ctaKind, winner, answer: outro.answer, channel: channel || null, seconds: outroSeconds }
