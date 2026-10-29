@@ -8,7 +8,13 @@ import re
 import shutil
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover - Python < 3.9, fallback là UTC+7 cố định
+    ZoneInfo = None
 
 import pymysql
 import requests
@@ -148,6 +154,53 @@ def cleanup(meta_path: Path, mp4: Path) -> None:
     print("Đã xóa video và các file tạm sau khi upload thành công")
 
 
+def _vn_tz():
+    """Múi giờ Việt Nam. Ưu tiên Asia/Ho_Chi_Minh, fallback UTC+7 nếu thiếu tzdata."""
+    if ZoneInfo is not None:
+        try:
+            return ZoneInfo("Asia/Ho_Chi_Minh")
+        except Exception:
+            pass
+    return timezone(timedelta(hours=7))
+
+
+def normalize_publish_at(value: str) -> str:
+    """Chuẩn hoá thời gian hẹn public về dạng RFC3339 UTC, vd 2026-10-31T02:00:00Z.
+
+    Chấp nhận '...Z', '+07:00', hoặc không kèm múi giờ (hiểu là giờ VN).
+    """
+    text = (value or "").strip()
+    if not text:
+        raise ValueError("publish_at trống")
+    dt = datetime.fromisoformat(text[:-1] + "+00:00" if text.endswith(("Z", "z")) else text)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_vn_tz())
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def next_publish_at_9am_vn(now: datetime | None = None) -> str:
+    """Giờ public tiếp theo lúc 09:00 VN, trả về UTC dạng RFC3339.
+
+    Tính tại thời điểm upload (sau khi render xong), không phải lúc workflow
+    bắt đầu. Nếu lúc upload đã quá 08:45 VN thì dời sang 09:00 VN hôm sau,
+    để YouTube không bị nhận thời gian trong quá khứ / public ngay.
+    """
+    now_vn = (now or datetime.now(timezone.utc)).astimezone(_vn_tz())
+    target = now_vn.replace(hour=9, minute=0, second=0, microsecond=0)
+    if target <= now_vn + timedelta(minutes=15):
+        target += timedelta(days=1)
+    return target.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def resolve_publish_at(args) -> str | None:
+    """Trả về publishAt (UTC, dạng Z) hoặc None nếu đăng ngay theo --privacy."""
+    if getattr(args, "publish_at", None):
+        return normalize_publish_at(args.publish_at)
+    if getattr(args, "schedule_9am_vn", False):
+        return next_publish_at_9am_vn()
+    return None
+
+
 def _sanitize_snippet(info: dict, with_tags: bool = True) -> dict:
     """Làm sạch tiêu đề/mô tả/tag theo luật YouTube (không < >, tiêu đề <=100 ký tự, tag <=500 ký tự)."""
     def strip(text: str) -> str:
@@ -173,26 +226,33 @@ def _sanitize_snippet(info: dict, with_tags: bool = True) -> dict:
     return {"title": title or "Boss Battle", "description": desc.strip(), "tags": tags}
 
 
-def upload(access_token: str, mp4: Path, info: dict, privacy: str, category: str, kids: bool) -> str:
+def upload(access_token: str, mp4: Path, info: dict, privacy: str, category: str, kids: bool,
+           publish_at: str | None = None) -> str:
     try:
-        return _upload(access_token, mp4, _sanitize_snippet(info), privacy, category, kids)
+        return _upload(access_token, mp4, _sanitize_snippet(info), privacy, category, kids, publish_at)
     except requests.HTTPError as exc:
         if exc.response is None or exc.response.status_code != 400:
             raise
         print(f"  ! YouTube trả 400 ({exc.response.text[:300]}), thử lại không tag/ngôn ngữ…")
         return _upload(access_token, mp4, _sanitize_snippet(info, with_tags=False), privacy, category, kids,
-                       minimal=True)
+                       publish_at, minimal=True)
 
 
 def _upload(access_token: str, mp4: Path, info: dict, privacy: str, category: str, kids: bool,
-            minimal: bool = False) -> str:
+            publish_at: str | None = None, minimal: bool = False) -> str:
+    # YouTube API chỉ nhận publishAt khi privacyStatus = private, và video
+    # chưa từng public. Đặt publishAt thì ép về private: YouTube sẽ tự
+    # chuyển sang public đúng giờ đó, không cần gọi thêm API nào nữa.
+    status = {"privacyStatus": "private" if publish_at else privacy, "selfDeclaredMadeForKids": kids}
+    if publish_at:
+        status["publishAt"] = publish_at
     body = {
         "snippet": {
             "title": info["title"],
             "description": info["description"],
             "categoryId": str(category),
         },
-        "status": {"privacyStatus": privacy, "selfDeclaredMadeForKids": kids},
+        "status": status,
     }
     if info["tags"]:
         body["snippet"]["tags"] = info["tags"]
@@ -280,8 +340,13 @@ def short_package(kind: str, meta: dict, info: dict, main_url: str) -> dict:
     }
 
 
-def publish_short(row: dict, mp4: Path, meta: dict, info: dict, main_id: str, args) -> None:
-    """Dựng và đăng các loại Short với cùng tài khoản; mọi lỗi chỉ cảnh báo, không làm hỏng video chính."""
+def publish_short(row: dict, mp4: Path, meta: dict, info: dict, main_id: str, args,
+                  publish_at: str | None = None) -> None:
+    """Dựng và đăng các loại Short với cùng tài khoản; mọi lỗi chỉ cảnh báo, không làm hỏng video chính.
+
+    Khi hẹn giờ, Short cũng hẹn cùng giờ với video chính để không lộ kết quả
+    (đặc biệt Short highlight) trước khi video chính public.
+    """
     main_url = f"https://youtu.be/{main_id}"
     kinds = [k for k in (args.short_types or "").split(",") if k in KINDS] or list(KINDS)
     for kind in kinds:
@@ -290,7 +355,8 @@ def publish_short(row: dict, mp4: Path, meta: dict, info: dict, main_id: str, ar
             build_short(mp4, meta, info, short_mp4, Path(".work") / f"short-{kind}", kind=kind)
             pkg = short_package(kind, meta, info, main_url)
             token = valid_access_token(row)
-            short_id = upload(token, short_mp4, pkg, args.privacy, args.category, args.made_for_kids)
+            short_id = upload(token, short_mp4, pkg, args.privacy, args.category, args.made_for_kids,
+                              publish_at)
             print(f"Đã upload Short {kind}: https://youtube.com/shorts/{short_id}")
             post_comment(token, short_id, pkg["comment"])
         except Exception as exc:  # noqa: BLE001
@@ -309,8 +375,31 @@ def main() -> None:
     ap.add_argument("--no-thumbnail", action="store_true", help="Không tạo/đặt thumbnail tự động")
     ap.add_argument("--no-comment", action="store_true", help="Không đăng bình luận đầu tiên dưới video chính")
     ap.add_argument("--no-short", action="store_true", help="Không dựng/đăng YouTube Short kèm theo")
+    ap.add_argument("--schedule-9am-vn", action="store_true",
+                    help="Hẹn public 09:00 VN tiếp theo (video chính + Short cùng hẹn giờ đó, "
+                         "YouTube tự public, không public ngay sau khi upload)")
+    ap.add_argument("--publish-at", default=os.environ.get("YT_PUBLISH_AT", ""),
+                    help="Hẹn public tại thời điểm cụ thể, vd 2026-10-31T02:00:00Z (= 09:00 VN). "
+                         "Ưu tiên hơn --schedule-9am-vn; khi đặt thì ép privacy về private.")
     ap.add_argument("--dry-run", action="store_true", help="Chỉ tạo metadata, không upload / không đổi DB")
     args = ap.parse_args()
+
+    # Tính giờ hẹn public NGAY trước khi upload (sau khi render xong), để
+    # nếu render kéo dài qua 09:00 VN thì tự dời sang hôm sau, không public ngay.
+    try:
+        publish_at = resolve_publish_at(args)
+    except ValueError as exc:
+        sys.exit(f"--publish-at không hợp lệ: {exc}")
+    if publish_at:
+        publish_dt = datetime.fromisoformat(publish_at[:-1] + "+00:00")
+        if publish_dt <= datetime.now(timezone.utc) + timedelta(minutes=5):
+            sys.exit(f"Giờ hẹn public {publish_at} đã quá gần/quá khứ, huỷ upload để tránh public ngay. "
+                     f"Chạy lại với --schedule-9am-vn để tự lấy 09:00 VN tiếp theo.")
+        vn_time = publish_dt.astimezone(_vn_tz()).strftime("%Y-%m-%d %H:%M")
+        print(f"Hẹn public: {vn_time} VN ({publish_at} UTC) — video ở dạng private tới giờ đó, "
+              f"rồi YouTube tự chuyển sang public.")
+    else:
+        print(f"Đăng ngay: privacy={args.privacy} (không hẹn giờ)")
 
     metas = sorted(Path(args.dir).glob("video-*.json"))
     if not metas:
@@ -330,11 +419,15 @@ def main() -> None:
         print(f"Thử tài khoản client_id={row['client_id'][:12]}… (num={row['num']})")
         try:
             token = valid_access_token(row)
-            video_id = upload(token, mp4, info, args.privacy, args.category, args.made_for_kids)
+            video_id = upload(token, mp4, info, args.privacy, args.category, args.made_for_kids,
+                              publish_at)
         except AccountError as exc:
             print(f"  ! bỏ qua tài khoản này: {exc}")
             continue
-        print(f"Đã upload: https://youtu.be/{video_id}")
+        if publish_at:
+            print(f"Đã upload (đang hẹn giờ, chưa public): https://youtu.be/{video_id}")
+        else:
+            print(f"Đã upload: https://youtu.be/{video_id}")
         if not args.no_thumbnail:
             try:
                 jpg = build_thumbnail(mp4, meta, mp4.with_suffix(".thumb.jpg"), Path(".work") / "thumb")
@@ -345,7 +438,7 @@ def main() -> None:
         if not args.no_comment:
             post_comment(valid_access_token(row), video_id, main_comment(meta))
         if not args.no_short:
-            publish_short(row, mp4, meta, info, video_id, args)
+            publish_short(row, mp4, meta, info, video_id, args, publish_at)
         try:
             increment_num(row["client_id"])
             print("  num +1")
