@@ -37,9 +37,14 @@ on:
         required: false
         default: true
       privacy:
-        description: "Chế độ hiển thị: public / unlisted / private"
+        description: "Chế độ hiển thị khi KHÔNG hẹn giờ: public / unlisted / private (bật hẹn giờ thì YouTube tự ép về private tới giờ public)"
         required: false
         default: "public"
+      schedule_9am:
+        description: "Hẹn giờ public 9h VN (true/false) — chạy theo lịch luôn bật, không phụ thuộc ô này"
+        type: boolean
+        required: false
+        default: true
       intro:
         description: "Bật mở màn VS (thú cưỡi vs boss + quái, câu hỏi, đếm ngược 3-2-1, READY/GO)"
         type: boolean
@@ -84,10 +89,12 @@ on:
         description: "Tên kênh hiển thị ở cảnh kết thúc (để trống = chỉ ghi SUBSCRIBE)"
         required: false
   schedule:
-    # Gaming prime times for a global English audience (US + UK/EU), in UTC:
-    # 15:00 UTC (11am ET / 4pm UK), 20:00 UTC (4pm ET / 1pm PT / 9pm UK), 00:00 UTC (8pm ET / 5pm PT).
-    # Starts ~40 min early to leave render time; odd minutes avoid GitHub's :00/:30 congestion.
-    - cron: "17 23 * * *"  # publish ~00:00 UTC
+    # GitHub cron chạy theo UTC. 22:10 UTC hôm trước = 05:10 VN hôm sau.
+    # Video dựng xong sẽ upload ở dạng hẹn giờ, YouTube tự public lúc 09:00 VN
+    # (= 02:00 UTC cùng ngày). GitHub có thể chạy lệch vài phút nhưng vẫn kịp
+    # trước 09:00 VN nếu render không quá ~3h45; nếu qua 09:00 VN thì
+    # publish.py tự dời lịch sang 09:00 VN hôm sau thay vì public ngay.
+    - cron: "10 22 * * *"  # 05:10 VN, hẹn public 09:00 VN
 
 concurrency:
   group: render-video
@@ -154,7 +161,7 @@ jobs:
           --style "$INTRO_STYLE" --countdown "$INTRO_COUNTDOWN"
           --outro-style "$OUTRO_STYLE" --stats-style "$STATS_STYLE" --cta-style "$CTA_STYLE"
 
-      - name: Tạo SEO bằng DeepSeek và upload YouTube
+      - name: Tạo SEO bằng DeepSeek và upload YouTube (hẹn public 9h VN)
         id: publish
         if: ${{ inputs.upload != 'false' }}
         env:
@@ -164,7 +171,12 @@ jobs:
           DB_NAME: ${{ secrets.DB_NAME }}
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASS: ${{ secrets.DB_PASS }}
-        run: python -m render.publish --dir output --category 20 --privacy ${{ inputs.privacy || 'public' }} ${{ inputs.short == 'false' && '--no-short' || '' }} --short-types "${{ inputs.short_types || 'predict,highlight' }}"
+        run: |
+          SCHEDULE_ARG=""
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ] || [ "${{ inputs.schedule_9am }}" = "true" ]; then
+            SCHEDULE_ARG="--schedule-9am-vn"
+          fi
+          python -m render.publish --dir output --category 20 --privacy ${{ inputs.privacy || 'public' }} $SCHEDULE_ARG ${{ inputs.short == 'false' && '--no-short' || '' }} --short-types "${{ inputs.short_types || 'predict,highlight' }}"
 
       - name: Xóa kịch bản ưu tiên và cảnh chon-canh-vat đã dùng (sau khi upload thành công)
         if: ${{ success() && (steps.publish.outcome == 'success' || inputs.upload == 'false') }}
